@@ -23,3 +23,12 @@
 	Classes from 9 to 10
 		Residual Space rules quantity 7
 		Orientation rules quantity 6
+
+4. Layout results.csv file:
+	Column 1: Classe
+	Column 2: Quantity
+	Column 3: Instance Index
+	Column 4: Objective Function Value
+	Column 5: time in second
+	Column 6: waste (used only in class 10 problems)
+	Column 7: solution: layout [[[idItem, xi, yi, zi, orientation],...] 
