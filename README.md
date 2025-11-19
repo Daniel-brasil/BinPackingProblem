@@ -4,7 +4,9 @@
 
    	You can find configurations files, seeds and instances in https://drive.google.com/drive/folders/1tyv7MAkSTRTY1TA1y_lLT1G6Y-ng9zE5?usp=sharing
 
-	The file names follow the pattern:
+	The contents of the folder from the link above must be copied to the same location where the executable is placed.
+
+	The file names of the instances follow the pattern:
 
 		First number: class
 		Second number: quantity
