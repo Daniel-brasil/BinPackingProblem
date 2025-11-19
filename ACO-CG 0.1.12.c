@@ -1,94 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include "gurobi_c.h"
 
-int  timeLimitACO, timeLimitCG, totalTimeLimit, NumberStart, method;
-float QAnt, evaporation, QIncrease, pheromone, alfa, beta, nZao, QNZao, volume_Total;
-int sr, spaceRule, orientationRule;
+int  timeLimitACO, timeLimitMIP, NIterations, timeLimitRMP;
+int  o, sr;
+float QAnt, evaporation, QIncrease, pheromone, alfa, beta, nZao, QNZao, volume_Total, ZMin;
+int volumeTotal, menorVolume, menorLado;
 float teta;
 
-typedef struct {
-
-	double* mipStart;
-	float value;
-
-}BestStart;
-
-typedef struct noBestStart {
-
-	BestStart bestStart;
-	struct noBestStart* proximo;
-
-}NoBestStart;
-
-
-BestStart preencheBestStart(int quantidade, float value) {
-
-	BestStart bestStart;
-
-	bestStart.mipStart = (double*)calloc(quantidade, sizeof(double));
-	bestStart.value = value;
-
-	return bestStart;
-
-}
-
-NoBestStart* insertBestStart(NoBestStart** atual, NoBestStart* topo, int quantidade, float value) {
-
-	NoBestStart* novo = malloc(sizeof(NoBestStart));
-	novo->bestStart = preencheBestStart(quantidade, value);
-
-	*atual = novo;
-
-	if (topo == NULL) {
-
-		novo->proximo = NULL;
-		return novo;
-
-	}
-	else if (topo->bestStart.value <= novo->bestStart.value) {
-
-		novo->proximo = topo;
-		return novo;
-
-	}
-	else {
-
-		NoBestStart* anterior = topo, * aux = topo->proximo;
-
-		while (aux && aux->bestStart.value > novo->bestStart.value) {
-
-			anterior = aux;
-			aux = aux->proximo;
-
-		}
-
-		anterior->proximo = novo;
-		novo->proximo = aux;
-
-		return topo;
-
-	}
-
-}
-
-NoBestStart* deleteBestStart(NoBestStart* topo) {
-
-	NoBestStart* aux = topo;
-	topo = aux->proximo;
-	free(aux->bestStart.mipStart);
-	free(aux);
-	return topo;
-}
-
+//########################################struct probability#####################################
 
 typedef struct {
 
 	int id;
-	float value;
+	float value[10];
 
 }Probability;
 
@@ -107,7 +35,16 @@ Probability preencherProbability(int id) {
 
 	probability.id = id;
 
-	probability.value = 0.0;
+	probability.value[0] = 0.0;
+	probability.value[1] = 0.0;
+	probability.value[2] = 0.0;
+	probability.value[3] = 0.0;
+	probability.value[4] = 0.0;
+	probability.value[5] = 0.0;
+	probability.value[6] = 0.0;
+	probability.value[7] = 0.0;
+	probability.value[8] = 0.0;
+	probability.value[9] = 0.0;
 
 	return probability;
 
@@ -148,42 +85,19 @@ void deleteProbability(NoProbability** topo, NoProbability* anterior, NoProbabil
 
 }
 
-void printProbability(NoProbability* topo) {
+void freeProbabilities(NoProbability* topoProbability) {
 
-	NoProbability* aux = topo;
+	NoProbability* auxProbability;
 
-	printf("\n[");
+	while (topoProbability) {
 
-	while (aux) {
-
-		printf("%d: %f; ", aux->probability.id, aux->probability.value);
-
-		aux = aux->permanentProximo;
+		auxProbability = topoProbability->proximo;
+		free(topoProbability);
+		topoProbability = auxProbability;
 
 	}
 
-	printf("]\n");
-
 }
-
-void printProbabilityModified(NoProbability* topo) {
-
-	NoProbability* aux = topo;
-
-	printf("\n[");
-
-	while (aux) {
-
-		printf("%d: %f; ", aux->probability.id, aux->probability.value);
-
-		aux = aux->proximo;
-
-	}
-
-	printf("]\n");
-
-}
-
 
 //*************** Estrutura Pack ***********************
 typedef struct {
@@ -193,7 +107,7 @@ typedef struct {
 	int y;
 	int z;
 	int orient;
-	int kx; // projeção no eixo x
+	int kx; // projeÃ§Ã£o no eixo x
 	int ky;
 	int kz;
 
@@ -207,7 +121,7 @@ typedef struct noPack {
 }NoPack;
 
 
-//*************** Estrutura Espaço Residual ***********************
+//*************** Estrutura EspaÃ§o Residual ***********************
 typedef struct {
 
 	int volume;
@@ -263,7 +177,6 @@ typedef struct {
 	int value;
 	float utilization;
 	int time;
-	int best;
 	struct noBin* bins;
 
 }Soluction;
@@ -273,7 +186,6 @@ typedef struct noSoluction {
 
 	Soluction soluction;
 	struct noSoluction* proximo; //ponteiro apontando para um estrutura do tipo noSoluction
-	struct noSoluction* nextBestSoluction;
 
 }NoSoluction;
 
@@ -300,10 +212,10 @@ Pack preencherPack(int id, int x, int y, int z, int orient, int kx, int ky, int 
 
 void imprimirPack(Pack pack) {
 
-	printf("\nid: %i,  x: %i, y: %i, z: %i, orientation: %i, %i parallel to axis x, %i parallel to axis y, %i parallel to axis z,\n", pack.id, pack.x, pack.y, pack.z, pack.orient, pack.kx, pack.ky, pack.kz);
+	printf("\nid: %i,  x: %i, y: %i, z: %i, orientacao: %i, %i paralelo ao eixo x, %i paralelo ao eixo y, %i paralelo ao eixo z,\n", pack.id, pack.x, pack.y, pack.z, pack.orient, pack.kx, pack.ky, pack.kz);
 }
 
-//função operação push (empilhar)
+//funÃ§Ã£o operaÃ§Ã£o push (empilhar)
 
 
 NoPack* empilharPack(NoPack* lista, int id, int x, int y, int z, int orient, int kx, int ky, int kz) {
@@ -312,14 +224,14 @@ NoPack* empilharPack(NoPack* lista, int id, int x, int y, int z, int orient, int
 	if (novo) {
 
 		novo->pack = preencherPack(id, x, y, z, orient, kx, ky, kz);//salva o dado pessoa na struct novo
-		novo->proximo = lista; //salva ponteiro próximo como o último topo
+		novo->proximo = lista; //salva ponteiro prÃ³ximo como o Ãºltimo topo
 
 		return novo;
 
 	}
 	else {
 
-		printf("Não foi possível alocar memória");
+		printf("NÃ£o foi possÃ­vel alocar memÃ³ria");
 		return NULL;
 	}
 
@@ -331,14 +243,14 @@ void deletarPack(NoBin* binAtual, int idItem, int volume) {
 
 	auxPack = binAtual->bin.conteudo;
 
-	if (auxPack->pack.id == idItem) { // é o primeiro item
+	if (auxPack->pack.id == idItem) { // Ã© o primeiro item
 
 		binAtual->bin.conteudo = auxPack->proximo;
 
 		free(auxPack);
 
 	}
-	else {//não é o primeiro item
+	else {//nÃ£o Ã© o primeiro item
 
 		while (auxPack && auxPack->proximo->pack.id != idItem) {
 
@@ -408,13 +320,13 @@ Space preencherSpace(int indexBin, int x, int y, int z, int maxX, int maxY, int 
 }
 
 
-//função operação push (empilhar)
+//funÃ§Ã£o operaÃ§Ã£o push (empilhar)
 
 int empilhaSpaceNaBin(NoBin* usedBin, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = usedBin->bin.spaces;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		usedBin->bin.spaces = inserir;
 		inserir->proximoNaBin = NULL;
@@ -469,7 +381,7 @@ int empilhaSpaceNaBin(NoBin* usedBin, NoSpace* inserir) {
 		}
 
 		if (aux && inserir->space.z == aux->space.z && inserir->space.y == aux->space.y && inserir->space.x == aux->space.x) {
-			//ponto duplicado não  insere
+			//ponto duplicado nÃ£o  insere
 
 			return 0;
 
@@ -507,7 +419,7 @@ void empilhaSpaceGeral6(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -554,7 +466,7 @@ void empilhaSpaceGeral5(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -562,8 +474,8 @@ void empilhaSpaceGeral5(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.y < aux->space.y ||
-		inserir->space.y == aux->space.y && inserir->space.x < aux->space.x ||
-		inserir->space.y == aux->space.y && inserir->space.x == aux->space.x && inserir->space.z < aux->space.z) {
+		(inserir->space.y == aux->space.y && inserir->space.x < aux->space.x) ||
+		(inserir->space.y == aux->space.y && inserir->space.x == aux->space.x && inserir->space.z < aux->space.z)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -618,7 +530,7 @@ void empilhaSpaceGeral4(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -626,8 +538,8 @@ void empilhaSpaceGeral4(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.y < aux->space.y ||
-		inserir->space.y == aux->space.y && inserir->space.z < aux->space.z ||
-		inserir->space.y == aux->space.y && inserir->space.z == aux->space.z && inserir->space.x < aux->space.x) {
+		(inserir->space.y == aux->space.y && inserir->space.z < aux->space.z) ||
+		(inserir->space.y == aux->space.y && inserir->space.z == aux->space.z && inserir->space.x < aux->space.x)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -682,7 +594,7 @@ void empilhaSpaceGeral3(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -690,8 +602,8 @@ void empilhaSpaceGeral3(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.x < aux->space.x ||
-		inserir->space.x == aux->space.x && inserir->space.z < aux->space.z ||
-		inserir->space.x == aux->space.x && inserir->space.z == aux->space.z && inserir->space.y < aux->space.y) {
+		(inserir->space.x == aux->space.x && inserir->space.z < aux->space.z) ||
+		(inserir->space.x == aux->space.x && inserir->space.z == aux->space.z && inserir->space.y < aux->space.y)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -746,7 +658,7 @@ void empilhaSpaceGeral2(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -754,8 +666,8 @@ void empilhaSpaceGeral2(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.x < aux->space.x ||
-		inserir->space.x == aux->space.x && inserir->space.y < aux->space.y ||
-		inserir->space.x == aux->space.x && inserir->space.y == aux->space.y && inserir->space.z < aux->space.z) {
+		(inserir->space.x == aux->space.x && inserir->space.y < aux->space.y) ||
+		(inserir->space.x == aux->space.x && inserir->space.y == aux->space.y && inserir->space.z < aux->space.z)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -811,7 +723,7 @@ void empilhaSpaceGeral1(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -819,8 +731,8 @@ void empilhaSpaceGeral1(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.z < aux->space.z ||
-		inserir->space.z == aux->space.z && inserir->space.y < aux->space.y ||
-		inserir->space.z == aux->space.z && inserir->space.y == aux->space.y && inserir->space.x < aux->space.x) {
+		(inserir->space.z == aux->space.z && inserir->space.y < aux->space.y) ||
+		(inserir->space.z == aux->space.z && inserir->space.y == aux->space.y && inserir->space.x < aux->space.x)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -877,7 +789,7 @@ void empilhaSpaceGeral(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	NoSpace* anterior, * aux = *listaSpaceGeral;
 
-	if (aux == NULL) {//lista está vazia
+	if (aux == NULL) {//lista estÃ¡ vazia
 
 		*listaSpaceGeral = inserir;
 		inserir->proximoGeral = NULL;
@@ -885,8 +797,8 @@ void empilhaSpaceGeral(NoSpace** listaSpaceGeral, NoSpace* inserir) {
 
 	}
 	else if (inserir->space.z < aux->space.z ||
-		inserir->space.z == aux->space.z && inserir->space.x < aux->space.x ||
-		inserir->space.z == aux->space.z && inserir->space.x == aux->space.x && inserir->space.y < aux->space.y) {
+		(inserir->space.z == aux->space.z && inserir->space.x < aux->space.x) ||
+		(inserir->space.z == aux->space.z && inserir->space.x == aux->space.x && inserir->space.y < aux->space.y)) {
 		//insere no inicio
 
 		*listaSpaceGeral = inserir;
@@ -951,7 +863,8 @@ void empilharSpace(NoSpace** listaSpaceGeral, NoBin* usedBin, NoSpace* inserir) 
 		else if (sr == 5) empilhaSpaceGeral4(listaSpaceGeral, inserir);
 		else empilhaSpaceGeral5(listaSpaceGeral, inserir);
 
-	}else {
+	}
+	else {
 
 		free(inserir);
 
@@ -961,7 +874,7 @@ void empilharSpace(NoSpace** listaSpaceGeral, NoBin* usedBin, NoSpace* inserir) 
 
 NoSpace* criarSpace(int x, int y, int z, int indexBin, int maxX, int maxY, int maxZ) {
 
-	NoSpace* aux, * novo = malloc(sizeof(NoSpace));
+	NoSpace* novo = malloc(sizeof(NoSpace));
 
 	if (novo) {
 
@@ -975,7 +888,7 @@ NoSpace* criarSpace(int x, int y, int z, int indexBin, int maxX, int maxY, int m
 	}
 	else {
 
-		printf("Não foi possível alocar memória");
+		printf("NÃ£o foi possÃ­vel alocar memÃ³ria");
 	}
 
 	return novo;
@@ -1057,7 +970,7 @@ Bin preencherBin(int id, int usedSpace, NoPack* listaPack, NoSpace* listaSpace) 
 	return bin;
 }
 
-//função operação push (empilhar)
+//funÃ§Ã£o operaÃ§Ã£o push (empilhar)
 
 NoBin* empilharBin(NoBin* listaBin, NoPack* listaPack, NoSpace* listaSpace, int id, int usedSpace) {
 	NoBin* novo = malloc(sizeof(NoBin));
@@ -1065,7 +978,7 @@ NoBin* empilharBin(NoBin* listaBin, NoPack* listaPack, NoSpace* listaSpace, int 
 	if (novo) {
 
 		novo->bin = preencherBin(id, usedSpace, listaPack, listaSpace);//salva o dado pessoa na struct novo
-		novo->proximo = listaBin; //salva ponteiro próximo como o último topo
+		novo->proximo = listaBin; //salva ponteiro prÃ³ximo como o Ãºltimo topo
 		novo->proximoColuna = NULL;
 
 		return novo;
@@ -1073,7 +986,7 @@ NoBin* empilharBin(NoBin* listaBin, NoPack* listaPack, NoSpace* listaSpace, int 
 	}
 	else {
 
-		printf("Não foi possível alocar memória");
+		printf("NÃ£o foi possÃ­vel alocar memÃ³ria");
 		return NULL;
 	}
 
@@ -1094,6 +1007,25 @@ NoBin* findBin(int idBin, NoBin* lista) { //encontra o ponteiro para um comparti
 
 }
 
+void freeMemoryBinMIP(NoBin* topoBin) {
+
+	NoBin* auxBin = topoBin;
+	NoBin* temp;
+
+	while (auxBin) {
+
+		freeMemoryPack(auxBin->bin.conteudo);
+
+		temp = auxBin->proximoColuna;
+
+		free(auxBin);
+
+		auxBin = temp;
+
+	}
+
+
+}
 
 void freeMemoryBin(NoBin* topoBin) {
 
@@ -1115,6 +1047,33 @@ void freeMemoryBin(NoBin* topoBin) {
 
 }
 
+void imprimirBin(NoBin* topoBin) {
+
+	NoBin* aux = topoBin;
+	NoPack* auxPack;
+
+	while (aux) {
+
+
+		printf("\n\nBin id %d\n", aux->bin.idt);
+
+		auxPack = aux->bin.conteudo;
+
+		while (auxPack) {
+
+			imprimirPack(auxPack->pack);
+
+			auxPack = auxPack->proximo;
+
+		}
+
+
+
+		aux = aux->proximo;
+	}
+
+}
+
 //******************************procedimentos Soluction*****************************
 
 Soluction preencherSoluction(int value, float utilization, int time, int id, NoBin* listaBin) {
@@ -1127,8 +1086,6 @@ Soluction preencherSoluction(int value, float utilization, int time, int id, NoB
 	soluction.utilization = utilization;
 	soluction.time = time;
 	soluction.bins = listaBin;
-	soluction.best = 0;
-
 
 	return soluction;
 }
@@ -1139,8 +1096,7 @@ NoSoluction* empilharSoluction(NoSoluction* listaSoluction, NoBin* listaBin, int
 	if (novo) {
 
 		novo->soluction = preencherSoluction(value, utilization, time, id, listaBin);//salva o dado pessoa na struct novo
-		novo->proximo = listaSoluction; //salva ponteiro próximo como o último topo
-		novo->nextBestSoluction = NULL;
+		novo->proximo = listaSoluction; //salva ponteiro prÃ³ximo como o Ãºltimo topo
 
 
 		return novo;
@@ -1148,35 +1104,12 @@ NoSoluction* empilharSoluction(NoSoluction* listaSoluction, NoBin* listaBin, int
 	}
 	else {
 
-		printf("Não foi possível alocar memória");
+		printf("NÃ£o foi possÃ­vel alocar memÃ³ria");
 		return NULL;
 	}
 
 }
 
-NoSoluction* empilharBestSoluction(NoSoluction* listaBestSoluction, NoSoluction* novo) {
-
-	novo->nextBestSoluction = listaBestSoluction; //salva ponteiro próximo como o último topo
-
-	return novo;
-
-}
-
-
-NoSoluction* findSoluction(int id, NoSoluction* lista) { //encontra o ponteiro para um compartimento (Bin) a partir de seu index
-
-	NoSoluction* usedSoluction = lista;
-
-	while (usedSoluction && (*usedSoluction).soluction.id != id) {
-
-		usedSoluction = usedSoluction->proximo;
-
-	}
-
-
-	return usedSoluction;
-
-}
 
 
 void freeMemorySoluction(NoSoluction* geralSoluction) {
@@ -1187,51 +1120,82 @@ void freeMemorySoluction(NoSoluction* geralSoluction) {
 
 }
 
+void freeMemorySoluctionAll(NoSoluction* geralSoluction) {
+
+	NoSoluction* aux = NULL;
+
+	while (geralSoluction) {
+
+		geralSoluction = aux;
+
+		geralSoluction = geralSoluction->proximo;
+
+		freeMemorySoluction(aux);
+
+
+	}
+
+
+}
+
+void freeMemorySoluctionACO(NoSoluction* geralSoluction) {
+
+	NoSoluction* aux = NULL;
+
+	while (geralSoluction) {
+
+		geralSoluction = aux;
+
+		geralSoluction = geralSoluction->proximo;
+
+		free(aux);
+
+
+	}
+
+
+}
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-//este grupo de  funções ordena os itens de acordo com o cálculo de próximo passo e retorna um vetor com os índices ordenados
+//este grupo de  funÃ§Ãµes ordena os itens de acordo com o cÃ¡lculo de prÃ³ximo passo e retorna um vetor com os Ã­ndices ordenados
 
-void ordenaValores(float** nextStep, int* ordem, int quantidade) {
-
-
-	void quicksort(int inicio, int fim, float** nextStep, int* ordem);
-	int particao(int inicio, int fim, float** nextStep, int* ordem);
-	int contador;
-
-	for (contador = 0; contador < quantidade; contador++) {
-
-		ordem[contador] = contador;
-
-	}
-
-
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-}
-
-
-void quicksort(int inicio, int fim, float** nextStep, int* ordem) {
-
-	if (inicio < fim) {
-
-		int pivo = particao(inicio, fim, nextStep, ordem);
-		quicksort(inicio, pivo - 1, nextStep, ordem);
-		quicksort(pivo + 1, fim, nextStep, ordem);
-
-	}
-
-
-}
-
-int particao(int inicio, int fim, float** nextStep, int* ordem) {
+/*
+int particaoIncrease(int inicio, int fim, float* nextStep, int* ordem) {
 	int i = inicio;
 	int j;
 	int temporario;
 
 	for (j = inicio; j < fim; j++) {
 
-		if (nextStep[ordem[j]][0] >= nextStep[ordem[fim]][0]) {
+		if (nextStep[ordem[j]] <= nextStep[ordem[fim]]) {
+
+			temporario = ordem[i];
+			ordem[i] = ordem[j];
+			ordem[j] = temporario;
+			i = i + 1;
+		}
+
+	}
+
+	temporario = ordem[i];
+	ordem[i] = ordem[fim];
+	ordem[fim] = temporario;
+
+
+	return i;
+
+}
+*/
+
+int particaoDecrease(int inicio, int fim, float* nextStep, int* ordem) {
+	int i = inicio;
+	int j;
+	int temporario;
+
+	for (j = inicio; j < fim; j++) {
+
+		if (nextStep[ordem[j]] >= nextStep[ordem[fim]]) {
 
 			temporario = ordem[i];
 			ordem[i] = ordem[j];
@@ -1250,47 +1214,146 @@ int particao(int inicio, int fim, float** nextStep, int* ordem) {
 
 }
 
+/*void quicksortIncrease(int inicio, int fim, float* nextStep, int* ordem) {
 
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+	if (inicio < fim) {
 
-//importa a instância do arquivo txt e salva no tabela itens
-void importaArquivo(int** itens, int classe, int quantidade, int instancia, int tamanho[]) {
+		int pivo = particaoIncrease(inicio, fim, nextStep, ordem);
+		quicksortIncrease(inicio, pivo - 1, nextStep, ordem);
+		quicksortIncrease(pivo + 1, fim, nextStep, ordem);
+
+	}
+
+
+}
+
+*/
+
+void quicksortDecrease(int inicio, int fim, float* nextStep, int* ordem) {
+
+	if (inicio < fim) {
+
+		int pivo = particaoDecrease(inicio, fim, nextStep, ordem);
+		quicksortDecrease(inicio, pivo - 1, nextStep, ordem);
+		quicksortDecrease(pivo + 1, fim, nextStep, ordem);
+
+	}
+
+
+}
+
+void ordenaValores(float* nextStep, int* ordem, int quantidade) {
+
+	int contador;
+
+	for (contador = 0; contador < quantidade; contador++) {
+
+		ordem[contador] = contador;
+
+	}
+
+
+	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
+
+}
+
+//##############################################################
+//importa a instÃ¢ncia do arquivo txt e salva no tabela itens
+
+int retornaMaior(int a, int b, int c) {
+
+	if (a > b) {
+
+		if (a > c) return a;
+		else return c;
+
+	}
+	else {
+
+		if (b > c) return b;
+		else return c;
+
+	}
+
+}
+
+int retornaMenor(int a, int b, int c) {
+
+	if (a < b) {
+
+		if (a < c) return a;
+		else return c;
+
+	}
+	else {
+
+		if (b < c) return b;
+		else return c;
+
+	}
+
+}
+
+int retornaMeio(int a, int b, int c) {
+
+	if ((a >= b && a <= c) ||
+		(a >= c && a <= b)) return a;
+
+	else if ((b >= a && b <= c) ||
+		(b >= c && b <= a)) return b;
+	else return c;
+
+}
+
+
+int importaArquivoClass9(int** itens, float** heuristicas, int classe, int quantidade, int instancia, int tamanho[]) {
 
 	volume_Total = 0.0;
+	volumeTotal = 0;
+	int maiorVolume = 0;
+	int volume;
+	int totalTipos = 0;
 
-	char texto1[15];
+	char texto[30];
+	char texto1[2];
 	char texto2[] = "_";
 	char texto3[5];
 	char texto4[3];
 	char texto5[] = ".txt";
 
+	strcpy(texto, "instances/");
+
 	sprintf(texto1, "%d", classe);
 	sprintf(texto3, "%d", quantidade);
 	sprintf(texto4, "%d", instancia);
 
-
-	strcat(texto1, texto2);
-	strcat(texto1, texto3);
-	strcat(texto1, texto2);
-	strcat(texto1, texto4);
-	strcat(texto1, texto5);
+	strcat(texto, texto1);
+	strcat(texto, texto2);
+	strcat(texto, texto3);
+	strcat(texto, texto2);
+	strcat(texto, texto4);
+	strcat(texto, texto5);
 
 	printf("\n\n\t++++++++++++++++++++++++++++++++++++++++++++\n");
-	printf("\n\tInstancia utilizada %s\n\n", texto1);
+	printf("\n\tInstancia utilizada %s\n\n", texto);
 
 	int contador;
-	int maiorVolume = 0;
 
 	FILE* file;
-	file = fopen(texto1, "r");
+	file = fopen(texto, "r");
 
-	if (classe == 9) {
+	int tamanhoTemp[3];
 
-		fscanf(file, "%i", &tamanho[0]);
-		fscanf(file, "%i", &tamanho[1]);
-		fscanf(file, "%i", &tamanho[2]);
+	fscanf(file, "%i", &tamanhoTemp[0]);
+	fscanf(file, "%i", &tamanhoTemp[1]);
+	fscanf(file, "%i", &tamanhoTemp[2]);
 
-	}
+	tamanho[0] = retornaMaior(tamanhoTemp[0], tamanhoTemp[1], tamanhoTemp[2]);
+	tamanho[1] = retornaMenor(tamanhoTemp[0], tamanhoTemp[1], tamanhoTemp[2]);
+	tamanho[2] = retornaMeio(tamanhoTemp[0], tamanhoTemp[1], tamanhoTemp[2]);
+
+	menorVolume = tamanho[0] * tamanho[1] * tamanho[2];
+	menorLado = retornaMenor(tamanho[0], tamanho[1], tamanho[2]);
 
 	for (contador = 0; contador < quantidade; contador++) {
 
@@ -1299,18 +1362,116 @@ void importaArquivo(int** itens, int classe, int quantidade, int instancia, int 
 		fscanf(file, "%i", &itens[contador][2]);
 		fscanf(file, "%i", &itens[contador][3]);
 
+		volume = itens[contador][1] * itens[contador][2] * itens[contador][3];
+
+		//volume
+		heuristicas[0][contador] = (float)volume;
+		heuristicas[1][contador] = (float)retornaMaior(itens[contador][1], itens[contador][2], itens[contador][3]);
+		heuristicas[2][contador] = (float)retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+		heuristicas[3][contador] = (float)retornaMenor(itens[contador][1] * itens[contador][2],
+			itens[contador][1] * itens[contador][3],
+			itens[contador][2] * itens[contador][3]);
+		heuristicas[4][contador] = (float)retornaMaior(itens[contador][1] * itens[contador][2],
+			itens[contador][1] * itens[contador][3],
+			itens[contador][2] * itens[contador][3]);
+
+		volumeTotal = volumeTotal + volume;
+
+		if (menorLado > retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]))
+			menorLado = retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+
+		if (menorVolume > volume)menorVolume = volume;
+
+		if (maiorVolume < volume) maiorVolume = volume;
+
+		fscanf(file, "%i", &itens[contador][5]);
+
+		if (itens[contador][5] + 1 > totalTipos) totalTipos = itens[contador][5] + 1;
+
+	}
+
+	fclose(file);
+
+	if (classe > 8) {
+
+		nZao = QNZao * ((float)maiorVolume);
+
+	}
+
+	return totalTipos;
+
+}
+
+void importaArquivo(int** itens, float** heuristicas, int classe, int quantidade, int instancia, int tamanho[]) {
+
+	volume_Total = 0.0;
+	volumeTotal = 0;
+	int maiorVolume = 0;
+	int volume;
+
+	char texto[30];
+	char texto1[3];
+	char texto2[] = "_";
+	char texto3[5];
+	char texto4[3];
+	char texto5[] = ".txt";
+
+	strcpy(texto, "instances/");
+
+	sprintf(texto1, "%d", classe);
+	sprintf(texto3, "%d", quantidade);
+	sprintf(texto4, "%d", instancia);
+
+	strcat(texto, texto1);
+	strcat(texto, texto2);
+	strcat(texto, texto3);
+	strcat(texto, texto2);
+	strcat(texto, texto4);
+	strcat(texto, texto5);
+
+	printf("\n\n\t++++++++++++++++++++++++++++++++++++++++++++\n");
+	printf("\n\tInstancia utilizada %s\n\n", texto);
+
+	int contador;
+
+	FILE* file;
+	file = fopen(texto, "r");
+
+	menorVolume = tamanho[0] * tamanho[1] * tamanho[2];
+	menorLado = retornaMenor(tamanho[0], tamanho[1], tamanho[2]);
+
+	for (contador = 0; contador < quantidade; contador++) {
+
+		fscanf(file, "%i", &itens[contador][0]);
+		fscanf(file, "%i", &itens[contador][1]);
+		fscanf(file, "%i", &itens[contador][2]);
+		fscanf(file, "%i", &itens[contador][3]);
+
+		volume = itens[contador][1] * itens[contador][2] * itens[contador][3];
+
+		//volume
+		heuristicas[0][contador] = (float)volume;
+		heuristicas[1][contador] = (float)retornaMaior(itens[contador][1], itens[contador][2], itens[contador][3]);
+		heuristicas[2][contador] = (float)retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+		heuristicas[3][contador] = (float)retornaMenor(itens[contador][1] * itens[contador][2],
+			itens[contador][1] * itens[contador][3],
+			itens[contador][2] * itens[contador][3]);
+
+		volumeTotal = volumeTotal + volume;
+
+		if (menorLado > retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]))
+			menorLado = retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+
+		if (menorVolume > volume)menorVolume = volume;
+
 		if (classe > 8) {
 
+			if (maiorVolume < volume) maiorVolume = volume;
 
-			if (maiorVolume < itens[contador][1] * itens[contador][2] * itens[contador][3]) {
-
-				maiorVolume = itens[contador][1] * itens[contador][2] * itens[contador][3];
-
-			}
-
-			if (classe == 10) volume_Total = volume_Total + (((float)itens[contador][1]) / 100.0 * ((float)itens[contador][2]) / 100.0 * ((float)itens[contador][3]) / 100.0);
-
-			if (classe == 9) fscanf(file, "%i", &itens[contador][5]);
+			volume_Total = volume_Total +
+				(((float)itens[contador][1]) / 100.0 *
+					((float)itens[contador][2]) / 100.0 *
+					((float)itens[contador][3]) / 100.0);
 
 		}
 
@@ -1423,7 +1584,7 @@ void resolveOverlap(NoSpace* residualSpace, NoPack* item) {
 
 }
 
-// verifica se um item cabe em um espaço residual de acordo com uma orietanção passada
+// verifica se um item cabe em um espaÃ§o residual de acordo com uma orietanÃ§Ã£o passada
 
 int fitSpace(NoSpace* place, int id, int orientations, int** itens) {
 
@@ -1728,7 +1889,7 @@ int packPacked(NoSpace* place, int id, int** itens, int o) {
 
 }
 
-definePointAxis(int pointAxis[], int packed, int x, int y, int z) {
+void definePointAxis(int pointAxis[], int packed, int x, int y, int z) {
 
 	switch (packed) {
 	case 1:
@@ -1794,7 +1955,7 @@ void updateNewSpaces(NoSpace* spaceXLeft, NoSpace* spaceXDown, NoSpace* spaceYDo
 
 
 			if ((*aux).pack.y + (*aux).pack.ky <= (*spaceXDown).space.y) {
-				//objeto está a esquerda
+				//objeto estÃ¡ a esquerda
 
 				//projetar no XLeft
 				if ((*aux).pack.z <= (*spaceXLeft).space.z && (*aux).pack.z + (*aux).pack.kz > (*spaceXLeft).space.z
@@ -1819,7 +1980,7 @@ void updateNewSpaces(NoSpace* spaceXLeft, NoSpace* spaceXDown, NoSpace* spaceYDo
 
 			}
 			else if ((*aux).pack.x + (*aux).pack.kx <= (*spaceYDown).space.x) {
-				//objeto está atrás
+				//objeto estÃ¡ atrÃ¡s
 
 				//projetar no YBack
 				if ((*aux).pack.z <= (*spaceYBack).space.z && (*aux).pack.z + (*aux).pack.kz > (*spaceYBack).space.z
@@ -1845,7 +2006,7 @@ void updateNewSpaces(NoSpace* spaceXLeft, NoSpace* spaceXDown, NoSpace* spaceYDo
 
 			}
 			else if ((*aux).pack.z + (*aux).pack.kz <= (*spaceXLeft).space.z) {
-				//objeto está abaixo
+				//objeto estÃ¡ abaixo
 
 				//projetar no XDown
 				if ((*aux).pack.x <= (*spaceXDown).space.x && (*aux).pack.x + (*aux).pack.kx > (*spaceXDown).space.x
@@ -1909,7 +2070,7 @@ void updateNewSpaces(NoSpace* spaceXLeft, NoSpace* spaceXDown, NoSpace* spaceYDo
 void reclassificaSpace(NoSpace** spaceGeral, NoSpace* space) {
 
 
-	NoSpace* atual=space, *anterior = space->anteriorGeral;
+	NoSpace* atual = space, * anterior = space->anteriorGeral;
 
 	if (anterior && atual->space.volume < anterior->space.volume) {
 
@@ -1952,13 +2113,13 @@ void updateSpaces(NoSpace** spaceGeral, NoBin* usedBin, int x, int y, int z, int
 
 	NoPack* item = empilharPack(NULL, 0, x, y, z, 1, pointAxis[0], pointAxis[1], pointAxis[2]);
 
-	NoSpace* deletar, * anterior, * aux = usedBin->bin.spaces;
+	NoSpace* deletar, * aux = usedBin->bin.spaces;
 
 	while (aux) {
 
 		resolveOverlap(aux, item);
 
-		if (aux->space.volume <= 0) {
+		if (aux->space.volume < menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado) {
 
 			deletar = aux;
 
@@ -1974,7 +2135,7 @@ void updateSpaces(NoSpace** spaceGeral, NoBin* usedBin, int x, int y, int z, int
 
 			aux = aux->proximoNaBin;
 
-		
+
 
 		}
 
@@ -2047,11 +2208,11 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	}
 
-	//exclui espaço com volume 0
+	//exclui espaÃ§o com volume 0
 
 	aux = *spaceXLeft;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceXLeft = NULL;
@@ -2060,7 +2221,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	aux = *spaceXDown;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceXDown = NULL;
@@ -2069,7 +2230,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	aux = *spaceYDown;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceYDown = NULL;
@@ -2078,7 +2239,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	aux = *spaceYBack;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceYBack = NULL;
@@ -2087,7 +2248,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	aux = *spaceZLeft;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceZLeft = NULL;
@@ -2096,7 +2257,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 
 	aux = *spaceZBack;
 
-	if (aux && aux->space.volume <= 0) {
+	if (aux && (aux->space.volume <= menorVolume || retornaMenor(aux->space.maxX, aux->space.maxY, aux->space.maxZ) < menorLado)) {
 
 		free(aux);
 		*spaceZBack = NULL;
@@ -2106,157 +2267,159 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 }
 
 
-NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[]) {
+NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[], double* PiValue, int classe) {
 
-	int i, o, x, y, z, id, packed = 0, volumes;
+	int i, x, y, z, id, packed = 0;
 	int idBin;
 	int pointAxis[3];
-	NoBin* topoBin, * usedBin, * bestBins = NULL;
+	NoBin* topoBin, * usedBin;
 	NoSpace* aux, * topoSpaceGeral;
 	NoPack* topoPack;
 	NoSpace* spaceXLeft, * spaceXDown, * spaceYDown, * spaceYBack, * spaceZLeft, * spaceZBack, * novoSpace;
+	double valorDual;
 
-	for (o = -1; o < orientationRule; o++) {
+	topoBin = NULL;
+	topoSpaceGeral = NULL;
+	topoPack = NULL;
+	idBin = 0;
 
-		for (sr = 0; sr < spaceRule; sr++) {
+	topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
+	topoBin->bin.qtdeItens = 0;
 
-			topoBin = NULL;
-			topoSpaceGeral = NULL;
-			topoPack = NULL;
-			idBin = 0;
+	novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
+	if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
 
-			topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
-			topoBin->bin.qtdeItens = 0;
+	idBin++;
 
-			novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
-			if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+	for (i = 0; i < quantidade; i++) {
 
-			idBin++;
+		id = ordem[i];
 
-			for (i = 0; i < quantidade; i++) {
+		packed = 0; //informa orientaÃ§Ã£o do empacotamento, se nÃ£o empacotado, informa 0
+		aux = topoSpaceGeral;
 
-				id = ordem[i];
+		while (aux && packed == 0) {
 
-				packed = 0; //informa orientação do empacotamento, se não empacotado, informa 0
-				aux = topoSpaceGeral;
+			if (aux->space.volume >= itens[id][1] * itens[id][2] * itens[id][3]) {
 
-				while (aux && packed == 0) {
+				if (o == -1) packed = packPackedMahvash(aux, id, itens);
+				else packed = packPacked(aux, id, itens, o + itens[id][4]);
 
-					if (aux->space.volume >= itens[id][1] * itens[id][2] * itens[id][3]) {
+				if (packed) {
 
-						if (o == -1) packed = packPackedMahvash(aux, id, itens);
-						else packed = packPacked(aux, id, itens, o + itens[id][4]);
+					spaceXLeft = NULL;
+					spaceXDown = NULL;
+					spaceYDown = NULL;
+					spaceYBack = NULL;
+					spaceZLeft = NULL;
+					spaceZBack = NULL;
 
-						if (packed) {
+					definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
 
-							spaceXLeft = NULL;
-							spaceXDown = NULL;
-							spaceYDown = NULL;
-							spaceYBack = NULL;
-							spaceZLeft = NULL;
-							spaceZBack = NULL;
+					usedBin = findBin((*aux).space.indexBin, topoBin);
 
-							definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
+					x = (*aux).space.x;
+					y = (*aux).space.y;
+					z = (*aux).space.z;
 
-							usedBin = findBin((*aux).space.indexBin, topoBin);
+					createNewSpaces(&spaceXLeft, &spaceXDown, &spaceYDown, &spaceYBack, &spaceZLeft, &spaceZBack, pointAxis, x, y, z, tamanho, aux->space.indexBin);
 
-							x = (*aux).space.x;
-							y = (*aux).space.y;
-							z = (*aux).space.z;
+					updateNewSpaces(spaceXLeft, spaceXDown, spaceYDown, spaceYBack, spaceZLeft, spaceZBack, (*usedBin).bin.conteudo);
 
-							createNewSpaces(&spaceXLeft, &spaceXDown, &spaceYDown, &spaceYBack, &spaceZLeft, &spaceZBack, pointAxis, x, y, z, tamanho, aux->space.indexBin);
+					deletRepeatedSpaces(&spaceXLeft, &spaceXDown, &spaceYDown, &spaceYBack, &spaceZLeft, &spaceZBack);
 
-							updateNewSpaces(spaceXLeft, spaceXDown, spaceYDown, spaceYBack, spaceZLeft, spaceZBack, (*usedBin).bin.conteudo);
+					deletarSpace(&topoSpaceGeral, usedBin, aux);
 
-							deletRepeatedSpaces(&spaceXLeft, &spaceXDown, &spaceYDown, &spaceYBack, &spaceZLeft, &spaceZBack);
+					updateSpaces(&topoSpaceGeral, usedBin, x, y, z, pointAxis);
 
-							deletarSpace(&topoSpaceGeral, usedBin, aux);
+					if (spaceZLeft) empilharSpace(&topoSpaceGeral, usedBin, spaceZLeft);
+					if (spaceZBack) empilharSpace(&topoSpaceGeral, usedBin, spaceZBack);
+					if (spaceXLeft) empilharSpace(&topoSpaceGeral, usedBin, spaceXLeft);
+					if (spaceYBack) empilharSpace(&topoSpaceGeral, usedBin, spaceYBack);
+					if (spaceXDown) empilharSpace(&topoSpaceGeral, usedBin, spaceXDown);
+					if (spaceYDown) empilharSpace(&topoSpaceGeral, usedBin, spaceYDown);
 
-							updateSpaces(&topoSpaceGeral, usedBin, x, y, z, pointAxis);
+					topoPack = empilharPack((*usedBin).bin.conteudo, id, x, y, z, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
 
-							if (spaceZLeft) empilharSpace(&topoSpaceGeral, usedBin, spaceZLeft);
-							if (spaceZBack) empilharSpace(&topoSpaceGeral, usedBin, spaceZBack);
-							if (spaceXLeft) empilharSpace(&topoSpaceGeral, usedBin, spaceXLeft);
-							if (spaceYBack) empilharSpace(&topoSpaceGeral, usedBin, spaceYBack);
-							if (spaceXDown) empilharSpace(&topoSpaceGeral, usedBin, spaceXDown);
-							if (spaceYDown) empilharSpace(&topoSpaceGeral, usedBin, spaceYDown);
-
-							topoPack = empilharPack((*usedBin).bin.conteudo, id, x, y, z, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
-
-							(*usedBin).bin.conteudo = topoPack;
-							(*usedBin).bin.usedSpace = (*usedBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
-							usedBin->bin.qtdeItens = usedBin->bin.qtdeItens + 1;
-
-						}
-
-					}
-
-					aux = aux->proximoGeral;
-
-				}
-
-				if (packed == 0) {
-
-					topoPack = NULL;
-
-					topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
-					topoBin->bin.qtdeItens = 0;
-
-					novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
-
-					if (o == -1) packed = packPackedMahvash(novoSpace, id, itens);
-					else packed = packPacked(novoSpace, id, itens, o + itens[id][4]);
-
-					free(novoSpace);
-					novoSpace = NULL;
-
-					if (packed) {
-
-						definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
-
-						novoSpace = criarSpace(0, 0, pointAxis[2], idBin, tamanho[0], tamanho[1], tamanho[2] - pointAxis[2]);
-						if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-						novoSpace = criarSpace(pointAxis[0], 0, 0, idBin, tamanho[0] - pointAxis[0], tamanho[1], tamanho[2]);
-						if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-						novoSpace = criarSpace(0, pointAxis[1], 0, idBin, tamanho[0], tamanho[1] - pointAxis[1], tamanho[2]);
-						if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-						topoPack = empilharPack((*topoBin).bin.conteudo, id, 0, 0, 0, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
-
-						(*topoBin).bin.conteudo = topoPack;
-						(*topoBin).bin.usedSpace = (*topoBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
-						topoBin->bin.qtdeItens = (*topoBin).bin.qtdeItens + 1;
-
-						idBin++;
-
-					}
+					(*usedBin).bin.conteudo = topoPack;
+					(*usedBin).bin.usedSpace = (*usedBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
+					usedBin->bin.qtdeItens = usedBin->bin.qtdeItens + 1;
 
 				}
 
 			}
 
-			freeMemorySpace(topoSpaceGeral);
+			aux = aux->proximoGeral;
 
-			if (bestBins == NULL || topoBin->bin.idt < bestBins->bin.idt) {
+		}
 
-				freeMemoryBin(bestBins);
-				bestBins = topoBin;
+		if (packed == 0) {
+
+			if (classe == 9) {
+
+				valorDual = PiValue[itens[id][5]];
 
 			}
 			else {
 
-				freeMemoryBin(topoBin);
+				valorDual = PiValue[id];
 
 			}
 
-		}
+			if (valorDual > 0.0) {
 
+				topoPack = NULL;
+
+				topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
+				topoBin->bin.qtdeItens = 0;
+
+				novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
+
+				if (o == -1) packed = packPackedMahvash(novoSpace, id, itens);
+				else packed = packPacked(novoSpace, id, itens, o + itens[id][4]);
+
+				free(novoSpace);
+				novoSpace = NULL;
+
+				if (packed) {
+
+					definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
+
+					novoSpace = criarSpace(0, 0, pointAxis[2], idBin, tamanho[0], tamanho[1], tamanho[2] - pointAxis[2]);
+					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+					novoSpace = criarSpace(pointAxis[0], 0, 0, idBin, tamanho[0] - pointAxis[0], tamanho[1], tamanho[2]);
+					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+					novoSpace = criarSpace(0, pointAxis[1], 0, idBin, tamanho[0], tamanho[1] - pointAxis[1], tamanho[2]);
+					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+					topoPack = empilharPack((*topoBin).bin.conteudo, id, 0, 0, 0, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
+
+					(*topoBin).bin.conteudo = topoPack;
+					(*topoBin).bin.usedSpace = (*topoBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
+					topoBin->bin.qtdeItens = (*topoBin).bin.qtdeItens + 1;
+
+					idBin++;
+
+				}
+				else {
+
+					printf("\nItem %d nao carregado\n", id);
+					system("pause");
+
+				}
+
+			}
+
+
+		}
 
 	}
 
-	return bestBins;
+	freeMemorySpace(topoSpaceGeral);
+
+	return topoBin;
 
 }
 
@@ -2278,7 +2441,6 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 		tamanho[0] = 10;
 		tamanho[1] = 10;
 		tamanho[2] = 10;
-
 		nZao = QNZao * 1000.0;
 
 	}
@@ -2287,7 +2449,6 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 		tamanho[0] = 40;
 		tamanho[1] = 40;
 		tamanho[2] = 40;
-
 		nZao = QNZao * 42875.0;
 
 	}
@@ -2302,11 +2463,111 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 }
 
 
+int validSoluctionClass9(NoBin* listaBin, int tam[], int solucao, int totalTipos, int* qtdTipos, int** itens) {
 
-//valida solução final para verificar todos os itens estão no limite da Bin e se não há overleap entre nenhum item
+	int erro = 0, totalBin = 0, tipo, k;
+	int* used = (int*)calloc(totalTipos, sizeof(int));
+	NoBin* auxBin = listaBin;
+	NoPack* auxPack;
+	NoPack* auxPack1;
+
+	//int volumeTotal;
+
+	while (auxBin) {// percorre todas as bins utilizadas
+
+		totalBin = totalBin + auxBin->bin.idt;
+
+		//volumeTotal = 0;
+
+		//printf("\nBin %d\n", auxBin->bin.idt);
+
+		auxPack = (*auxBin).bin.conteudo;
+
+		while (auxPack) { // percorre todos os elementos da bin
+
+
+			//volumeTotal = volumeTotal + (auxPack->pack.kx * auxPack->pack.ky * auxPack->pack.kz);
+
+			tipo = itens[auxPack->pack.id][5];
+
+			used[tipo] = used[tipo] + auxBin->bin.idt;
+
+			if ((*auxPack).pack.x + (*auxPack).pack.kx > tam[0] || (*auxPack).pack.y + (*auxPack).pack.ky > tam[1] || (*auxPack).pack.z + (*auxPack).pack.kz > tam[2]) {
+
+				printf("\n\tSolucao invalida! Objeto ultrapassa os limites da bin!\n");
+				imprimirPack(auxPack->pack);
+
+				erro++;
+
+			}
+
+
+			auxPack1 = auxPack->proximo;
+
+			while (auxPack1) { // percorre todos os demais elementos da bin
+
+				if ((*auxPack).pack.x + (*auxPack).pack.kx > (*auxPack1).pack.x &&
+					(*auxPack1).pack.x + (*auxPack1).pack.kx > (*auxPack).pack.x &&
+					(*auxPack).pack.y + (*auxPack).pack.ky > (*auxPack1).pack.y &&
+					(*auxPack1).pack.y + (*auxPack1).pack.ky > (*auxPack).pack.y &&
+					(*auxPack).pack.z + (*auxPack).pack.kz > (*auxPack1).pack.z &&
+					(*auxPack1).pack.z + (*auxPack1).pack.kz > (*auxPack).pack.z) {
+
+					printf("\n\tSolucao invalida! Objetos com sobreposicao!\n");
+					imprimirPack(auxPack->pack);
+					imprimirPack(auxPack1->pack);
+
+					erro++;
+
+				}
+
+
+				auxPack1 = auxPack1->proximo;
+
+			}
+
+
+			auxPack = auxPack->proximo;
+		}
+
+		//printf("\nVolume Total carregado %d\n", volumeTotal);
+
+		auxBin = auxBin->proximo;
+	}
+
+	for (k = 0; k < totalTipos; k++) {
+
+		if (qtdTipos[k] > used[k]) {
+
+			printf("\n\tItens tipo %d empacotados %d! Itens totais %d!\n", k, used[k], qtdTipos[k]);
+
+			erro++;
+
+
+		}
+
+	}
+
+	if (totalBin != solucao) {
+
+		printf("\n\tBins utilizadas %d! Solucao %d!\n", totalBin, solucao);
+
+		erro++;
+
+	}
+
+	free(used);
+
+	return erro;
+
+
+}
+
+
+//valida soluÃ§Ã£o final para verificar todos os itens estÃ£o no limite da Bin e se nÃ£o hÃ¡ overleap entre nenhum item
 int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
-	int erro = 0, totalItens = 0, totalBin = 0, i;
+	int erro = 0, totalItens = 0, totalBin = 0;
 	int* used = (int*)calloc(quantidade, sizeof(int));
 	NoBin* auxBin = listaBin;
 	NoPack* auxPack;
@@ -2336,7 +2597,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 			}
 			else {
 
-				printf("\n\tItem %d duplicated!\n");
+				printf("\n\tItem %d duplicado!\n", auxPack->pack.id);
 
 				erro++;
 
@@ -2348,7 +2609,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
 			if ((*auxPack).pack.x + (*auxPack).pack.kx > tam[0] || (*auxPack).pack.y + (*auxPack).pack.ky > tam[1] || (*auxPack).pack.z + (*auxPack).pack.kz > tam[2]) {
 
-				printf("\n\tInvalid Solution! Item item exceeds the bin limit!\n");
+				printf("\n\tSolucao invalida! Objeto ultrapassa os limites da bin!\n");
 				imprimirPack(auxPack->pack);
 
 				erro++;
@@ -2367,7 +2628,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 					(*auxPack).pack.z + (*auxPack).pack.kz > (*auxPack1).pack.z &&
 					(*auxPack1).pack.z + (*auxPack1).pack.kz > (*auxPack).pack.z) {
 
-					printf("\n\tInvalid Solution! Itens overleap!\n");
+					printf("\n\tSolucao invalida! Objetos com sobreposicao!\n");
 					imprimirPack(auxPack->pack);
 					imprimirPack(auxPack1->pack);
 
@@ -2391,7 +2652,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
 	if (totalItens != quantidade) {
 
-		printf("\n\tItems loaded %d! Items quantity %d!\n", totalItens, quantidade);
+		printf("\n\tItens empacotados %d! Itens totais %d!\n", totalItens, quantidade);
 
 		erro++;
 
@@ -2399,7 +2660,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
 	if (totalBin != solucao) {
 
-		printf("\n\tBins used %d! Solution %d!\n", totalBin, solucao);
+		printf("\n\tBins utilizadas %d! Solucao %d!\n", totalBin, solucao);
 
 		erro++;
 
@@ -2413,17 +2674,13 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
 
 //salva o arquivo com os resultados
-void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int objetivo, int tempo, unsigned int semente) {
+void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int objetivo, int totalTime, unsigned int semente) {
 
 	FILE* pont_arqu;
 	NoBin* auxBin = listaBin;
 	NoPack* auxPack;
-	NoPack* auxPack1;
-	float wasted = 0;
 
-
-	pont_arqu = fopen("results.csv", "a");
-
+	float wasted = 0.0;
 
 	if (classe == 10) {
 
@@ -2431,9 +2688,11 @@ void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int ob
 
 	}
 
-	fprintf(pont_arqu, "%d;%d;%d;%d;%d;%d;%.2f; [", semente, classe, quantidade, instancia, objetivo, tempo, wasted);
+	pont_arqu = fopen("BPP-0.1.6.csv", "a");
 
-	while (auxBin) {// percorre todas as bins utilizadas
+	fprintf(pont_arqu, "%d;%d;%d;%d;%d;%d;%2f;\n", classe, quantidade, instancia, semente, objetivo, totalTime, wasted);
+
+	/*while (auxBin) {// percorre todas as bins utilizadas
 
 		auxPack = (*auxBin).bin.conteudo;
 
@@ -2465,39 +2724,356 @@ void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int ob
 
 		auxBin = auxBin->proximo;
 	}
-
+*/
 	fclose(pont_arqu);
 
 }
 
 
+/*void defineClassificationType(int **itens, int quantidade, int *nextStep){
 
-//**********************************Conjunto de funcoes do Algoritmo Colônia de Formigas*************************************
+	int i;
+
+	for(i=0; i<quantidade; i++){
+
+		if(classification==0){//volume
+
+			nextStep[i] = itens[i][1]*itens[i][2]*itens[i][3];
+
+		}else if(classification==1){//maior lado
+
+			nextStep[i] = retornaMaior(itens[i][1], itens[i][2], itens[i][3]);
+
+		}else if(classification==2){//menor lado
+
+			nextStep[i] = retornaMenor(itens[i][1], itens[i][2], itens[i][3]);
+
+		}else if(classification==3){//maior area
+
+			nextStep[i] = retornaMaior(itens[i][1]*itens[i][2], itens[i][1]*itens[i][3], itens[i][2]*itens[i][3]);
+
+		}else if(classification==4){//menor area
+
+			nextStep[i] = retornaMenor(itens[i][1]*itens[i][2], itens[i][1]*itens[i][3], itens[i][2]*itens[i][3]);
+
+		}else if(classification==5){//menor diferenca de lado
+
+			nextStep[i] = retornaMenor( abs(itens[i][1]-itens[i][2]),
+										abs(itens[i][1]-itens[i][3]),
+										abs(itens[i][2]-itens[i][3]));
+
+		}else if(classification==6){//maior diferenca de lado
+
+			nextStep[i] = retornaMaior( abs(itens[i][1]-itens[i][2]),
+										abs(itens[i][1]-itens[i][3]),
+										abs(itens[i][2]-itens[i][3]));
+
+		}else if(classification==7){//maior diferenca de area
+
+			nextStep[i] = retornaMaior( abs(itens[i][1]*itens[i][2]-itens[i][1]*itens[i][3]),
+										abs(itens[i][1]*itens[i][2]-itens[i][2]*itens[i][3]),
+										abs(itens[i][1]*itens[i][3]-itens[i][2]*itens[i][3]));
+
+		}else{//menor diferenca de area
+
+			nextStep[i] = retornaMenor( abs(itens[i][1]*itens[i][2]-itens[i][1]*itens[i][3]),
+										abs(itens[i][1]*itens[i][2]-itens[i][2]*itens[i][3]),
+										abs(itens[i][1]*itens[i][3]-itens[i][2]*itens[i][3]));
+		}
+
+	}
+
+}
+*/
+
+void printOrdem(int** itens, int* nextStep, int* ordem, int quantidade) {
+
+	int i;
+
+	for (i = 0; i < quantidade; i++) {
+
+		printf("\n%d\t%d\t%d\t%d\t%d", ordem[i], itens[ordem[i]][1], itens[ordem[i]][2], itens[ordem[i]][3], nextStep[ordem[i]]);
+
+	}
+
+}
+
+
+/*void defineOrientationRuleAndSpaceRule(int classe){
+
+	if(classe<9){
+
+		orientationRule = 1;
+		spaceRule = 2;
+
+	}else{
+
+		orientationRule = 6;
+		spaceRule = 7;
+
+	}
+
+}
+*/
+
+void preencheCombinacoes(int** combinacoes, int quantidadeCombinacoes) {
+
+	if (quantidadeCombinacoes > 0) { combinacoes[0][0] = 0;	combinacoes[0][1] = -1;	combinacoes[0][2] = 0; }
+
+	if (quantidadeCombinacoes > 1) { combinacoes[1][0] = 0;	combinacoes[1][1] = 0;	combinacoes[1][2] = 0; }
+
+	if (quantidadeCombinacoes > 2) { combinacoes[2][0] = 1;	combinacoes[2][1] = 5;	combinacoes[2][2] = 3; }
+
+	if (quantidadeCombinacoes > 3) { combinacoes[3][0] = 1;	combinacoes[3][1] = 5;	combinacoes[3][2] = 4; }
+
+	if (quantidadeCombinacoes > 4) { combinacoes[4][0] = 2;	combinacoes[4][1] = -1;	combinacoes[4][2] = 0; }
+
+	if (quantidadeCombinacoes > 5) { combinacoes[5][0] = 3;	combinacoes[5][1] = -1;	combinacoes[5][2] = 0; }
+
+	if (quantidadeCombinacoes > 6) { combinacoes[6][0] = 3;	combinacoes[6][1] = 0;	combinacoes[6][2] = 0; }
+
+	if (quantidadeCombinacoes > 7) { combinacoes[7][0] = 0;	combinacoes[7][1] = -1;	combinacoes[7][2] = 3; }
+
+	if (quantidadeCombinacoes > 8) { combinacoes[8][0] = 0;	combinacoes[8][1] = 2;	combinacoes[8][2] = 5; }
+
+	if (quantidadeCombinacoes > 9) { combinacoes[9][0] = 4;	combinacoes[9][1] = 4;	combinacoes[9][2] = 4; }
+
+}
+
+
+
+float calcSmallerUtilization(NoBin* topoBin, int tamanho[]) {
+
+	NoBin* aux = topoBin;
+	int auxUtilization = aux->bin.usedSpace;
+	float utilization;
+
+	while (aux) {
+
+		if (aux->bin.usedSpace < auxUtilization) {
+
+			auxUtilization = aux->bin.usedSpace;
+		}
+
+		aux = aux->proximo;
+
+	}
+
+	utilization = (float)auxUtilization / ((float)(tamanho[0] * tamanho[1] * tamanho[2]));
+
+	return utilization;
+
+}
+
+//############################ Ant Colony Optmization ####################################
+
+
+int sorteiaProbabilidadeCombinacao(float* probabilityCombination, int quantidadeCombinacoes) {
+
+	float luck;
+	int j = 0;
+	float acumulated = probabilityCombination[0];
+
+	luck = ((float)rand() / (float)RAND_MAX);
+
+	while (j < quantidadeCombinacoes - 1 && luck < acumulated + probabilityCombination[j + 1]) {
+
+		j++;
+		acumulated = acumulated + probabilityCombination[j];
+
+	}
+
+	return j;
+
+}
+
+
+void calculaProbabilityCombination(float* probabilityCombination, float totalProbabilityCombination, int quantidadeCombinacoes) {
+
+
+	int k;
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		probabilityCombination[k] = probabilityCombination[k] / totalProbabilityCombination;
+
+	}
+
+
+}
+
+NoProbability* montaPilhaProbabilidade(int quantidade, float** pheromones, float** heuristicas, int quantidadeCombinacoes, int quantidadeOrdens) {
+
+	NoProbability* aux = NULL;
+	int i, k;
+
+	for (i = quantidade - 1; i >= 0; i--) {
+
+		aux = insereProbability(aux, i);
+
+		for (k = 0; k < quantidadeCombinacoes; k++) {
+
+			pheromones[k][i] = pheromone;
+
+		}
+
+		for (k = 0; k < quantidadeOrdens; k++) {
+
+			if (k == 0) { heuristicas[k][i] = (float)pow((double)(heuristicas[k][i] / nZao), (double)beta); }
+			else { heuristicas[k][i] = (float)pow((double)(heuristicas[k][i]), (double)beta); }
+
+		}
+
+	}
+
+	return aux;
+
+}
+
+//calcula o denominador. Calculado a cada iteraï¿½ï¿½o
+void calcDenominator(int** combinacoes, float** heuristicas, float** pheromones, int quantidade, NoProbability* topo, float* denominator, int quantidadeCombinacoes) {
+
+	NoProbability* aux = topo;
+	int j, k;
+
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		denominator[k] = 0.0;
+
+	}
+
+	for (j = 0; j < quantidade; j++) {
+
+		for (k = 0; k < quantidadeCombinacoes; k++) {
+
+			aux->probability.value[k] = (float)pow((double)pheromones[k][j], (double)alfa) * heuristicas[combinacoes[k][0]][j];
+
+			denominator[k] = denominator[k] + aux->probability.value[k];
+
+		}
+
+		aux = aux->permanentProximo;
+
+	}
+
+
+}
+
+//calcula a probabilidade, deve ser calculado para cada formiga
+void calcProbability(int quantidade, float denominator[7], NoProbability* topo, int* ordem, int k) {
+
+	int j;
+	float luck, acumulated;
+	NoProbability* aux, * anterior, * novotopo = topo;
+	float newdenominator = denominator[k];
+
+	for (j = 0; j < quantidade; j++) {
+
+		luck = ((float)rand() / (float)RAND_MAX);
+
+		aux = novotopo;
+
+		anterior = NULL;
+
+		acumulated = aux->probability.value[k] / newdenominator;
+
+		while (aux->proximo && acumulated < luck) {
+
+			anterior = aux;
+
+			aux = aux->proximo;
+
+			acumulated = acumulated + (aux->probability.value[k] / newdenominator);
+
+		}
+
+		ordem[j] = aux->probability.id;
+
+		newdenominator = newdenominator - aux->probability.value[k];
+
+		deleteProbability(&novotopo, anterior, aux);
+
+	}
+
+}
+
+void copyVector(int* ordem, int* bestOrder, int quantidade) {
+
+	int i;
+
+	for (i = 0; i < quantidade; i++) {
+
+		bestOrder[i] = ordem[i];
+
+	}
+}
+
+void updatePheromone(int* bestOrder, float* pheromones, int quantidade, float increase, float decrease) {
+
+	int i;
+
+	for (i = 0; i < quantidade; i++) {
+
+
+		pheromones[bestOrder[i]] = (pheromones[bestOrder[i]] * (((float)1.0) - evaporation)) + pheromone - (((float)i) * decrease) + ((float)increase) * QIncrease;
+
+	}
+
+}
+
+int updateProbabilityCombination(float* probabilityCombination, float totalProbabilityCombination, int bestCombination, float increaseValue, int quantidadeCombinacoes) {
+
+	int i;
+
+	float newTotalProbabilityCombination = 0.0;
+
+	for (i = 0; i < quantidadeCombinacoes; i++) {
+
+		probabilityCombination[i] = probabilityCombination[i] * totalProbabilityCombination * ((float)1.0 - evaporation);
+
+		newTotalProbabilityCombination = newTotalProbabilityCombination + probabilityCombination[i];
+
+	}
+
+	probabilityCombination[bestCombination] = probabilityCombination[bestCombination] + (increaseValue / totalProbabilityCombination);
+
+	newTotalProbabilityCombination = newTotalProbabilityCombination + (increaseValue / totalProbabilityCombination);
+
+	for (i = 0; i < quantidadeCombinacoes; i++) {
+
+		probabilityCombination[i] = probabilityCombination[i] / newTotalProbabilityCombination;
+
+	}
+
+	return newTotalProbabilityCombination;
+
+}
+
+//############################# parï¿½metros ###################################
 
 void printParams() {
 
 	printf("\n\tValores dos parametros");
 	printf("\n\tQAnt\t\t\t %f", QAnt);
-	printf("\n\talpha value\t\t\t %f", alfa);
-	printf("\n\tbeta value\t\t\t %f", beta);
-	printf("\n\tevaporation proportion\t\t %f", evaporation);
-	printf("\n\taddition proportion\t\t %f", QIncrease);
-	printf("\n\tpheromone value\t\t %f", pheromone);
+	printf("\n\tAlpha value\t\t %f", alfa);
+	printf("\n\tBeta value\t\t %f", beta);
+	printf("\n\tEvaporation proportion\t %f", evaporation);
+	printf("\n\tAddition proportion\t %f", QIncrease);
+	printf("\n\tPheromone value\t\t %f", pheromone);
 	printf("\n\tQNZao\t\t\t %f", QNZao);
-	printf("\n\tACO time limit\t %d", timeLimitACO);
-	printf("\n\t RMP time limit\t %d", timeLimitCG);
-	printf("\n\tTotal time limit\t %d", totalTimeLimit);
-	printf("\n\tMIP Starts quantity\t %d", NumberStart);
-	printf("\n\tResidual Space rules quantity\t%d", spaceRule);
-	printf("\n\tOrientation rules quantity\t%d", orientationRule);
-	printf("\n\tTheta value (fixed CG variables)\t%f", teta);
-
+	printf("\n\tNumber of iterations\t\t\t %d", NIterations);
+	printf("\n\tPercentage of Improvement\t\t\t %f", ZMin);
+	printf("\n\tTeta\t\t\t %f", teta);
+	printf("\n\tACO time limit\t\t %d", timeLimitACO);
+	printf("\n\tRMP time limit\t\t %d", timeLimitRMP);
+	printf("\n\tMIP time limit\t\t %d", timeLimitMIP);
 
 }
 
 void obtemValoresParametros() {
 
-	int opcao = 11;
+	int opcao = 14;
 
 	while (opcao > 0) {
 
@@ -2509,15 +3085,13 @@ void obtemValoresParametros() {
 		printf("\t4 - To change evaporation proportion.\n");
 		printf("\t5 - To change addition proportion.\n");
 		printf("\t6 - To change pheromone value.\n");
-		printf("\t7 - To change ACO time limit.\n");
-		printf("\t8 - To change RMP time limit (CG).\n");
-		printf("\t9 - To change total time limit.\n");
-		printf("\t10 - To change MIP Start quantity.\n");
-		printf("\t11 - To change residual space rule quantity.\n");
-		printf("\t12 - To change orientation rule quantity.\n");
-		printf("\t13 - To change theta value.\n");
-
-
+		printf("\t7 - To change QNZao.\n");
+		printf("\t8 - To change Number of Iterations.\n");
+		printf("\t9 - To change Percentage of Improvement.\n");
+		printf("\t10 - To change Teta.\n");
+		printf("\t11 - To change ACO time limit.\n");
+		printf("\t12 - To change RMP Time Limit.\n");
+		printf("\t13 - To change Total Limit.\n");
 		scanf("%d", &opcao);
 
 		system("cls");
@@ -2557,40 +3131,39 @@ void obtemValoresParametros() {
 			break;
 
 		case 7:
+			printf("\n\tType QNZao value (Ex: 0.5)\n\t");
+			scanf("%f", &QNZao);
+			break;
+
+		case 8:
+			printf("\n\tType Number of Iterations (Ex: 20)\n\t");
+			scanf("%d", &NIterations);
+			break;
+
+		case 9:
+			printf("\n\tType Percentage of Improvement (Ex: 0.2)\n\t");
+			scanf("%f", &ZMin);
+			break;
+
+		case 10:
+			printf("\n\tType Teta (Ex: 0.75)\n\t");
+			scanf("%f", &teta);
+			break;
+
+		case 11:
 			printf("\n\tType ACO time limit in seconds(Ex: 10)\n\t");
 			scanf("%d", &timeLimitACO);
 			break;
 
-		case 8:
-			printf("\n\tType RMP (CG) time limit in seconds (Ex: 10)\n\t");
-			scanf("%d", &timeLimitCG);
-			break;
-
-		case 9:
-			printf("\n\tType total time limit in seconds (Ex: 10)\n\t");
-			scanf("%d", &totalTimeLimit);
-			break;
-
-		case 10:
-			printf("\n\tType MIP Stars quantity (Ex: 5)\n\t");
-			scanf("%d", &NumberStart);
-			break;
-
-		case 11:
-			printf("\n\tType residual space rules quantity (Ex: 1-smaller volume, from 2 to 7 - smaller volume and extreme-point location)\n\t");
-			scanf("%d", &spaceRule);
-			break;
-
 		case 12:
-			printf("\n\tType orientation rules quantity (Ex: Ex: 0-Smaller difference, 1 a 6 - smaller difference and preference sequence)\n\t");
-			scanf("%d", &orientationRule);
+			printf("\n\tType RMP time limit in seconds(Ex: 10)\n\t");
+			scanf("%d", &timeLimitRMP);
 			break;
 
 		case 13:
-			printf("\n\tType theta value (Ex: 0.7)\n\t");
-			scanf("%f", &teta);
+			printf("\n\tType RMP (CG) time limit in seconds (Ex: 10)\n\t");
+			scanf("%d", &timeLimitMIP);
 			break;
-
 		default:
 			printf("\nPlease type a valid option\n");
 			break;
@@ -2608,7 +3181,7 @@ void importaParametros() {
 
 
 	FILE* file;
-	file = fopen("parametros.txt", "r");
+	file = fopen("parametros-BPP-0-0-3.txt", "r");
 
 	fscanf(file, "%f", &QAnt);
 	fscanf(file, "%f", &alfa);
@@ -2617,13 +3190,12 @@ void importaParametros() {
 	fscanf(file, "%f", &QIncrease);
 	fscanf(file, "%f", &pheromone);
 	fscanf(file, "%f", &QNZao);
-	fscanf(file, "%d", &timeLimitACO);
-	fscanf(file, "%d", &timeLimitCG);
-	fscanf(file, "%d", &totalTimeLimit);
-	fscanf(file, "%d", &NumberStart);
-	fscanf(file, "%d", &spaceRule);
-	fscanf(file, "%d", &orientationRule);
+	fscanf(file, "%d", &NIterations);
+	fscanf(file, "%f", &ZMin);
 	fscanf(file, "%f", &teta);
+	fscanf(file, "%d", &timeLimitACO);
+	fscanf(file, "%d", &timeLimitRMP);
+	fscanf(file, "%d", &timeLimitMIP);
 
 	fclose(file);
 
@@ -2634,11 +3206,9 @@ void updateParams() {
 
 	FILE* pont_arqu;
 
-	pont_arqu = fopen("parametros.txt", "w");
+	pont_arqu = fopen("parametros-BPP-0-0-3.txt", "w");
 
-	//	fprintf(pont_arqu, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d\t%lf\n", QAnt, alfa, beta, evaporation, QIncrease, pheromone, QNZao, timeLimit, mipTimeLimit);
-
-	fprintf(pont_arqu, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%d\t%d\t%f\n", QAnt, alfa, beta, evaporation, QIncrease, pheromone, QNZao, timeLimitACO, timeLimitCG, totalTimeLimit, NumberStart, spaceRule, orientationRule, teta);
+	fprintf(pont_arqu, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d\t%f\t%f\t%d\t%d\t%d\n", QAnt, alfa, beta, evaporation, QIncrease, pheromone, QNZao, NIterations, ZMin, teta, timeLimitACO, timeLimitRMP, timeLimitMIP);
 
 	fclose(pont_arqu);
 
@@ -2648,161 +3218,32 @@ void updateParams() {
 
 }
 
-//calcula a heurística. Precisa ser calculado uma única vez
-float calcHeuristic(int** itens, float** nextStep, int quantidade) {
 
-	int j;
-	float totalVolume = 0.0;
-
-	for (j = 0; j < quantidade; j++) {
-
-
-		totalVolume = totalVolume + ((float)(itens[j][1] * itens[j][2] * itens[j][3]));
-		nextStep[j][2] = pow((float)(itens[j][1] * itens[j][2] * itens[j][3]) / nZao, beta);
-		nextStep[j][3] = pheromone;
-
-	}
-
-	return totalVolume;
-
-}
-
-
-//calcula o denominador. Calculado a cada iteração
-float calcDenominator(float** nextStep, int quantidade, NoProbability* topo) {
-
-	NoProbability* aux = topo;
-	int j;
-	float denominator = 0;
-
-	for (j = 0; j < quantidade; j++) {
-
-		nextStep[j][1] = pow(nextStep[j][3], alfa);
-
-		aux->probability.value = nextStep[j][1] * nextStep[j][2];
-
-		denominator = denominator + aux->probability.value;
-
-		aux = aux->permanentProximo;
-
-	}
-
-
-	return denominator;
-
-}
-
-
-//calcula a probabilidade, deve ser calculado para cada formiga
-void calcProbality(int quantidade, float denominator, NoProbability* topo, int* ordem) {
-
-	int j;
-	float luck, acumulated;
-	NoProbability* aux, * anterior, * novotopo = topo;
-	float newdenominator = denominator;
-
-	for (j = 0; j < quantidade; j++) {
-
-		luck = ((float)rand() / (float)RAND_MAX);
-
-		aux = novotopo;
-
-		anterior = NULL;
-
-		acumulated = aux->probability.value / newdenominator;
-
-		while (aux->proximo && acumulated < luck) {
-
-			anterior = aux;
-
-			aux = aux->proximo;
-
-			acumulated = acumulated + (aux->probability.value / newdenominator);
-
-		}
-
-		ordem[j] = aux->probability.id;
-
-		newdenominator = newdenominator - aux->probability.value;
-
-		deleteProbability(&novotopo, anterior, aux);
-
-	}
-
-}
-
-float calcSmallerUtilization(NoBin* topoBin, int tamanho[]) {
-
-	NoBin* aux = topoBin;
-	int auxUtilization = aux->bin.usedSpace;
-	float utilization;
-
-	while (aux) {
-
-		if (aux->bin.usedSpace < auxUtilization) {
-
-			auxUtilization = aux->bin.usedSpace;
-		}
-
-		aux = aux->proximo;
-
-	}
-
-	utilization = (float)auxUtilization / ((float)(tamanho[0] * tamanho[1] * tamanho[2]));
-
-	return utilization;
-
-}
-
-
-void copyVector(int* ordem, int* bestOrder, int quantidade) {
-
-	int i;
-
-	for (i = 0; i < quantidade; i++) {
-
-		bestOrder[i] = ordem[i];
-
-	}
-}
-
-void updatePheromone(int* bestOrder, float** nextStep, int quantidade, float increase, float decrease) {
-
-	int i;
-
-	for (i = 0; i < quantidade; i++) {
-
-
-		nextStep[bestOrder[i]][3] = (nextStep[bestOrder[i]][3] * (((float)1) - evaporation)) + pheromone - (((float)i) * decrease) + ((float)increase) * QIncrease;
-
-	}
-
-
-}
-
-NoProbability* montaPilhaProbabilidade(int quantidade) {
-
-	NoProbability* aux = NULL;
-	int i;
-
-	for (i = quantidade - 1; i >= 0; i--) {
-
-		aux = insereProbability(aux, i);
-
-	}
-
-	return aux;
-
-}
-
+//###################################### procedimentos MIP #####################################################
 
 void alocaMemoriaRestricao(double** rhs, char** sense, char** senseMIP, int n) {
 
-	*rhs = (double*)malloc(n * sizeof(double)); //reserva memória para o lado direito da restrição (double)
+	*rhs = (double*)malloc(n * sizeof(double)); //reserva memÃ³ria para o lado direito da restriÃ§Ã£o (double)
 
-	*sense = (char*)malloc(n * sizeof(char)); //reserva memória para o sinal das restrições (char)
+	//*sense = (char*)malloc(n * sizeof(char)); //reserva memÃ³ria para o sinal das restriÃ§Ãµes (char)
 
-	*senseMIP = (char*)malloc(n * sizeof(char)); //reserva memória para o sinal das restrições (char)
+	*senseMIP = (char*)malloc(n * sizeof(char)); //reserva memÃ³ria para o sinal das restriÃ§Ãµes (char)
+
+}
+
+void criaRestricoesClass9(double* rhs, char* sense, char* senseMIP, int n, int* qtdTipos) {
+
+	int i;
+
+	for (i = 0; i < n; i++) {
+
+		rhs[i] = qtdTipos[i]; //armazena o lado direito da restriÃ§Ã£o
+
+		//sense[i] = GRB_GREATER_EQUAL; //armazena o sinal da restriï¿½ï¿½o
+
+		senseMIP[i] = GRB_GREATER_EQUAL;
+
+	}
 
 }
 
@@ -2812,9 +3253,9 @@ void criaRestricoes(double* rhs, char* sense, char* senseMIP, int n) {
 
 	for (i = 0; i < n; i++) {
 
-		rhs[i] = 1.0; //armazena o lado direito da restrição
+		rhs[i] = 1.0; //armazena o lado direito da restriÃ§Ã£o
 
-		sense[i] = GRB_EQUAL; //armazena o sinal da restrição
+		//sense[i] = GRB_GREATER_EQUAL; //armazena o sinal da restriï¿½ï¿½o
 
 		senseMIP[i] = GRB_GREATER_EQUAL;
 
@@ -2822,57 +3263,41 @@ void criaRestricoes(double* rhs, char* sense, char* senseMIP, int n) {
 
 }
 
-void alocaMemoriaVariaveis(int** cbeg, int** clen, int** cind, double** cval, double** lb, double** obj, char** ctype, char** ctypeMIP, int m, int nz) {
+void alocaMemoriaVariaveis(double** cMIPStart, int** cbeg, int** clen, int** cind, double** cval, double** lb, double** obj, char** ctype, char** ctypeMIP, int m, int nz) {
 
-	*cbeg = (int*)malloc(m * sizeof(int)); //armazena a quantidade de variáveis (inteiro)
+	*cbeg = (int*)malloc(m * sizeof(int)); //armazena a quantidade de variÃ¡veis (inteiro)
 
-	*clen = (int*)malloc(m * sizeof(int)); //armazena a quantidade variáveis na restrição (inteiro)
+	*clen = (int*)malloc(m * sizeof(int)); //armazena a quantidade variÃ¡veis na restriÃ§Ã£o (inteiro)
 
-	*cind = (int*)malloc(nz * sizeof(int)); //armazena os índices da restrição (inteiro)
+	*cind = (int*)malloc(nz * sizeof(int)); //armazena os Ã­ndices da restriÃ§Ã£o (inteiro)
 
-	*cval = (double*)malloc(nz * sizeof(double)); //armazena os valores dos multiplicadores das variáveis (double)
+	*cval = (double*)malloc(nz * sizeof(double)); //armazena os valores dos multiplicadores das variÃ¡veis (double)
 
-	*lb = (double*)malloc(m * sizeof(double)); //armazena o limite inferior das variáveis (double)
+	*lb = (double*)malloc(m * sizeof(double)); //armazena o limite inferior das variÃ¡veis (double)
 
-	*obj = (double*)malloc(m * sizeof(double)); //armazena o multiplicador das variáveis na função objetivo (double)
+	*obj = (double*)malloc(m * sizeof(double)); //armazena o multiplicador das variÃ¡veis na funÃ§Ã£o objetivo (double)
 
-	*ctype = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
+	//*ctype = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
 
 	*ctypeMIP = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
 
-}
-
-void alocaMemoriaUmaVariavel(int** cind, double** cval, NoBin* auxBin) {
-
-	*cind = (int*)malloc(auxBin->bin.qtdeItens * sizeof(int)); //armazena os índices da restrição (inteiro)
-
-	*cval = (double*)malloc(auxBin->bin.qtdeItens * sizeof(double)); //armazena os valores dos multiplicadores das variáveis (double)
+	*cMIPStart = (double*)calloc(m, sizeof(double));
 
 }
 
+void preencheVariaveisClass9(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, char* ctypeMIP, int quantidade, int** itens, int totalTipo) {
 
-void criaFuncaoObjetivo(double* lb, double* obj, int m) {
+	int* usedItens = malloc(totalTipo * sizeof(int));
 
-	int j;
+	int* indicesBestStart = NULL, bestActual = 0, totalIndiceBest = 0;
 
-	for (j = 0; j < m; j++) {
-		//for x variable
+	int nz = 0, initialNz, actualNz, totalNZ, tipo;
 
-		lb[j] = 0.0; //lower bound da variável x
+	int i = 0, k = 0, j = 0;
 
-		obj[j] = 1.0; //valor do objetivo = c
+	int* indiceBestStart = NULL;
 
-	}
-
-}
-
-NoBestStart* preencheVariaveis(NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, char* ctypeMIP, int quantidade) {
-
-	int nz = 0;
-
-	int numeroStart = 0, i = 0;
-
-	NoBestStart* bestAtual, * topoBestStart = NULL;
+	float valorMIPStart = soluctions->soluction.utilization;
 
 	NoSoluction* auxSoluction = soluctions;
 
@@ -2882,28 +3307,32 @@ NoBestStart* preencheVariaveis(NoBin** ultimaColuna, NoSoluction* soluctions, in
 
 	while (auxSoluction) {
 
-		if (numeroStart < NumberStart) {
-
-			topoBestStart = insertBestStart(&bestAtual, topoBestStart, quantidade, auxSoluction->soluction.utilization);
-			numeroStart++;
+		bestActual = 0;
 
 
-		}
-		else if (auxSoluction->soluction.utilization < topoBestStart->bestStart.value) {
+		if (indicesBestStart == NULL || auxSoluction->soluction.utilization < valorMIPStart) {
 
-			topoBestStart = insertBestStart(&bestAtual, topoBestStart, quantidade, auxSoluction->soluction.utilization);
-			topoBestStart = deleteBestStart(topoBestStart);
+			if (indicesBestStart) free(indicesBestStart);
 
+			totalIndiceBest = auxSoluction->soluction.value;
 
-		}
-		else {
+			indicesBestStart = calloc(auxSoluction->soluction.value, sizeof(int));
 
-			bestAtual = NULL;
+			bestActual = 1;
+
+			valorMIPStart = auxSoluction->soluction.utilization;
+
+			j = 0;
+
 		}
 
 		auxBin = auxSoluction->soluction.bins;
 
 		while (auxBin) {
+
+			cMIPStart[i] = 0.0;
+
+			initialNz = nz;
 
 			auxBin->bin.idtColuna = i;
 
@@ -2911,28 +3340,50 @@ NoBestStart* preencheVariaveis(NoBin** ultimaColuna, NoSoluction* soluctions, in
 
 			auxPack = auxBin->bin.conteudo;
 
+			for (k = 0; k < totalTipo; k++) {
+
+				usedItens[k] = -1;
+			}
+
+			totalNZ = 0;
+
 			while (auxPack) {
 
-				cind[nz] = auxPack->pack.id;
+				tipo = itens[auxPack->pack.id][5];
 
-				cval[nz] = 1.0;
+				if (usedItens[tipo] == -1) {
 
-				nz++;
+					usedItens[tipo] = nz + totalNZ;
+
+					cval[nz + totalNZ] = 0.0;
+
+					cind[nz + totalNZ] = tipo;
+
+					totalNZ++;
+
+				}
+
+				actualNz = usedItens[tipo];
+
+				cval[actualNz] = cval[actualNz] + 1.0;
 
 				auxPack = auxPack->proximo;
 
 			}
 
-			if (bestAtual) {//marca a variavel no MIP Start
+			nz = nz + totalNZ;
 
-				bestAtual->bestStart.mipStart[i] = 1.0;
+			if (bestActual == 1) {//marca a variavel no MIP Start
+
+				indicesBestStart[j] = i;
+
+				j++;
 
 			}
 
+			//ctype[i] = GRB_CONTINUOUS;
 
-			ctype[i] = GRB_CONTINUOUS;
-
-			ctypeMIP[i] = GRB_BINARY;
+			ctypeMIP[i] = GRB_INTEGER;
 
 			clen[i] = nz - cbeg[i];
 
@@ -2954,13 +3405,607 @@ NoBestStart* preencheVariaveis(NoBin** ultimaColuna, NoSoluction* soluctions, in
 
 	}
 
-	//testar esse procedimento
-	*ultimaColuna = binAnterior;
+	for (k = 0; k < totalIndiceBest; k++) {
 
-	return topoBestStart;
+		cMIPStart[indicesBestStart[k]] = (double)1.0;
+
+	}
+
+	free(indicesBestStart);
+
+	free(usedItens);
+
+	*ultimaColuna = binAnterior;
 
 }
 
+
+void preencheVariaveis(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, char* ctypeMIP, int quantidade) {
+
+	int nz = 0, i = 0;
+
+	int* indicesBestStart = NULL, bestActual = 0, totalIndiceBest = 0;
+
+	int k = 0, j = 0;
+
+	int* indiceBestStart = NULL;
+
+	float valorMIPStart = soluctions->soluction.utilization;
+
+	NoSoluction* auxSoluction = soluctions;
+
+	NoBin* auxBin, * binAnterior = NULL;
+
+	NoPack* auxPack;
+
+	while (auxSoluction) {
+
+		bestActual = 0;
+
+		if (indicesBestStart == NULL || auxSoluction->soluction.utilization < valorMIPStart) {
+
+			if (indicesBestStart) free(indicesBestStart);
+
+			totalIndiceBest = auxSoluction->soluction.value;
+
+			indicesBestStart = calloc(auxSoluction->soluction.value, sizeof(int));
+
+			valorMIPStart = auxSoluction->soluction.utilization;
+
+			bestActual = 1;
+
+		}
+
+		auxBin = auxSoluction->soluction.bins;
+
+		j = 0;
+
+		while (auxBin) {
+
+			auxBin->bin.idtColuna = i;
+
+			cbeg[i] = nz;
+
+			auxPack = auxBin->bin.conteudo;
+
+			while (auxPack) {
+
+				cind[nz] = auxPack->pack.id;
+
+				cval[nz] = 1.0;
+
+				nz++;
+
+				auxPack = auxPack->proximo;
+
+			}
+
+			if (bestActual == 1) {//marca a variavel no MIP Start
+
+				indicesBestStart[j] = i;
+
+				j++;
+
+			}
+
+			ctypeMIP[i] = GRB_BINARY;
+
+			//ctype[i] = GRB_CONTINUOUS;
+
+			clen[i] = nz - cbeg[i];
+
+			i++;
+
+			if (binAnterior) {
+
+				binAnterior->proximoColuna = auxBin;
+
+			}
+
+			binAnterior = auxBin;
+
+			auxBin = auxBin->proximo;
+
+		}
+
+		auxSoluction = auxSoluction->proximo;
+
+	}
+
+	for (k = 0; k < totalIndiceBest; k++) {
+
+		cMIPStart[indicesBestStart[k]] = (double)1.0;
+
+	}
+
+	free(indicesBestStart);
+
+	*ultimaColuna = binAnterior;
+
+}
+
+void criaFuncaoObjetivo(double* lb, double* obj, int m) {
+
+	int j;
+
+	for (j = 0; j < m; j++) {
+		//for x variable
+
+		lb[j] = 0.0; //lower bound da variÃ¡vel x
+
+		obj[j] = 1.0; //valor do objetivo = c
+
+	}
+
+}
+
+int retornaQuantidadeNaoZerosBin(NoPack* conteudo, int totalTipo, int** itens) {
+
+	NoPack* auxPack = conteudo;
+
+	int nz = 0;
+
+	int* usedItens = calloc(totalTipo, sizeof(int));
+
+	while (auxPack) {
+
+		if (usedItens[itens[auxPack->pack.id][5]] == 0) {
+
+			usedItens[itens[auxPack->pack.id][5]] = 1;
+
+			nz++;
+
+		}
+
+		auxPack = auxPack->proximo;
+
+	}
+
+	free(usedItens);
+
+	return nz;
+
+}
+
+int retornaQuantidadeNaoZerosSoluction(NoSoluction* soluction, int totalTipo, int** itens) {
+
+	NoBin* auxBin = soluction->soluction.bins;
+
+	int nz = 0;
+
+	while (auxBin) {
+
+
+		nz = nz + retornaQuantidadeNaoZerosBin(auxBin->bin.conteudo, totalTipo, itens);
+
+		auxBin = auxBin->proximo;
+
+	}
+
+	return nz;
+}
+
+int montaModeloClass9(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int* m, int totalTipo, int* qtdTipos, int** itens) {
+
+	int error = 0;
+	int nz = 0;
+	int n = totalTipo;
+	int* cbeg = NULL; //indica onde a restriÃ§Ã£o se inicia no array cind
+	int* clen = NULL;//indica quantos Ã­ndices nÃ£o nulos existem na restriÃ§Ã£o
+	int* cind = NULL;//contÃ©m os indices da variÃ¡vel na restriÃ§Ã£o
+	double* cval = NULL;//indica o multiplicador da variavel na restriÃ§Ã£o
+	double* rhs = NULL; //lado direito da restriÃ§Ã£o
+	char* sense = NULL; // sinal da restriÃ§Ã£o
+	char* senseMIP = NULL;
+	double* lb = NULL; //lower bound das variÃ¡veis
+	double* obj = NULL; //armazena os valores da funÃ§Ã£o objetivo
+	char* ctype = NULL; //tipo da variï¿½vel
+	char* ctypeMIP = NULL; //tipo da variÃ¡vel
+	double* cMIPStart = NULL;
+
+	NoSoluction* auxSoluction = geralSoluction;
+	NoBin* topoBin = NULL;
+
+	alocaMemoriaRestricao(&rhs, &sense, &senseMIP, n);
+
+
+	criaRestricoesClass9(rhs, sense, senseMIP, n, qtdTipos);
+
+	while (auxSoluction) {
+
+		*m = *m + auxSoluction->soluction.value; // quantidade de variÃ¡veis
+
+		nz = nz + retornaQuantidadeNaoZerosSoluction(auxSoluction, totalTipo, itens); //quantidade de indices nao zero nas restricoes
+
+		auxSoluction = auxSoluction->proximo;
+
+	}
+
+	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, &ctypeMIP, *m, nz);
+
+	criaFuncaoObjetivo(lb, obj, *m);
+
+	preencheVariaveisClass9(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, ctypeMIP, *m, itens, totalTipo);
+
+	/*error = GRBloadmodel(env, model, "RMP", *m, n,
+		GRB_MINIMIZE, 0.0, obj, sense, rhs,
+		cbeg, clen, cind, cval, lb, NULL,
+		ctype, NULL, NULL);
+	if (error) {printf("\nErro ao montar o modelo RMP (2)\n");  return error;}
+	*/
+	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
+		GRB_MINIMIZE, 0.0, obj, senseMIP, rhs,
+		cbeg, clen, cind, cval, lb, NULL,
+		ctypeMIP, NULL, NULL);
+	if (error) { printf("\nErro ao montar o modelo MIP (2)\n");   return error; }
+
+
+	error = GRBsetdblattrarray(*modelMIP, "Start", 0, *m, cMIPStart);
+	if (error) { printf("\nErro ao cadastrar o MIP Start (2)\n");   return error; }
+
+	return error;
+
+}
+
+int montaModelo(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int quantidade, int* m) {
+
+	int error = 0;
+	int nz = 0;
+	int n = quantidade;
+	int* cbeg = NULL; //indica onde a restriÃ§Ã£o se inicia no array cind
+	int* clen = NULL;//indica quantos Ã­ndices nÃ£o nulos existem na restriÃ§Ã£o
+	int* cind = NULL;//contÃ©m os indices da variÃ¡vel na restriÃ§Ã£o
+	double* cval = NULL;//indica o multiplicador da variavel na restriÃ§Ã£o
+	double* rhs = NULL; //lado direito da restriÃ§Ã£o
+	char* sense = NULL; // sinal da restriÃ§Ã£o
+	char* senseMIP = NULL;
+	double* lb = NULL; //lower bound das variÃ¡veis
+	double* obj = NULL; //armazena os valores da funÃ§Ã£o objetivo
+	char* ctype = NULL; //tipo da variï¿½vel
+	char* ctypeMIP = NULL; //tipo da variÃ¡vel
+	double* cMIPStart = NULL;
+
+	NoSoluction* auxSoluction = geralSoluction;
+	NoBin* topoBin = NULL;
+
+	alocaMemoriaRestricao(&rhs, &sense, &senseMIP, n);
+
+	criaRestricoes(rhs, sense, senseMIP, n);
+
+	while (auxSoluction) {
+
+		*m = *m + auxSoluction->soluction.value; // quantidade de variÃ¡veis
+
+		nz = nz + n; //quantidade de indices nao zero nas restricoes
+
+		auxSoluction = auxSoluction->proximo;
+
+	}
+
+	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, &ctypeMIP, *m, nz);
+
+	criaFuncaoObjetivo(lb, obj, *m);
+
+	preencheVariaveis(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, ctypeMIP, *m);
+
+	/*error = GRBloadmodel(env, model, "RMP", *m, n,
+		GRB_MINIMIZE, 0.0, obj, sense, rhs,
+		cbeg, clen, cind, cval, lb, NULL,
+		ctype, NULL, NULL);
+	if (error) { printf("\nErro ao montar o modelo RMP (1)\n");  return error; }
+	*/
+	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
+		GRB_MINIMIZE, 0.0, obj, senseMIP, rhs,
+		cbeg, clen, cind, cval, lb, NULL,
+		ctypeMIP, NULL, NULL);
+	if (error) { printf("\nErro ao montar o modelo MIP (1)\n");   return error; }
+
+	error = GRBsetdblattrarray(*modelMIP, "Start", 0, *m, cMIPStart);
+	if (error) { printf("\nErro ao cadastrar o MIP Start (1)\n");   return error; }
+
+	return error;
+
+}
+
+int obtemResultado(GRBmodel* model, double** valorVariaveis, int m) {
+
+	int erro;
+
+	*valorVariaveis = (double*)malloc(m * sizeof(double));
+
+	erro = GRBgetdblattrarray(model, "X", 0, m, *valorVariaveis);
+	if (erro) printf("\nErro ao obter o valor das variaveis\n");
+
+	return erro;
+}
+
+void salvaSolucao(NoSoluction** columnSoluction, NoBin* primeiraColuna, double* valorVariaveis, int m, int valor, int totalTime) {
+
+	NoBin* auxBin = primeiraColuna, * topoBin = NULL, * deleteBin = NULL;
+
+
+	int j;
+
+	for (j = 0; j < m; j++) {
+
+		if (valorVariaveis[j] > 0.0) {
+
+			auxBin->bin.idt = (int)valorVariaveis[j];
+			auxBin->proximo = topoBin;
+			topoBin = auxBin;
+			deleteBin = NULL;
+
+		}
+		else {
+
+			deleteBin = auxBin;
+		}
+
+
+		auxBin = auxBin->proximoColuna;
+
+		if (deleteBin) {
+
+			deleteBin->proximo = NULL;
+			freeMemoryBin(deleteBin);
+
+		}
+
+
+
+
+	}
+
+	*columnSoluction = empilharSoluction(*columnSoluction, topoBin, 0, valor, 0.0, totalTime);
+
+}
+
+void excluiItensDuplicados(NoSoluction* columnSoluction, int** itens, int quantidade) {
+
+	int* usedItens = (int*)calloc(quantidade, sizeof(int));
+
+	NoBin* auxBin = columnSoluction->soluction.bins;
+
+	NoPack* auxPack = NULL;
+
+	while (auxBin) {
+
+		auxPack = auxBin->bin.conteudo;
+
+		while (auxPack) {
+
+			if (usedItens[auxPack->pack.id] == 0) {// item ainda nÃ£o utilizado
+
+				usedItens[auxPack->pack.id] = 1;
+
+			}
+			else {
+
+				deletarPack(auxBin, auxPack->pack.id, itens[auxPack->pack.id][1] * itens[auxPack->pack.id][2] * itens[auxPack->pack.id][3]);
+
+			}
+
+			auxPack = auxPack->proximo;
+
+		}
+
+		auxBin = auxBin->proximo;
+	}
+
+
+	free(usedItens);
+
+}
+
+int selectBestCombination(int** combinacoes, float* probabilityCombination, int quantidadeCombinacoes) {
+
+	int k, bestCombination = 0;
+	float bestCombinationValue = 0.0;
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		if (bestCombinationValue < probabilityCombination[k]) {
+
+			bestCombinationValue = probabilityCombination[k];
+
+			bestCombination = k;
+
+		}
+
+	}
+
+	o = combinacoes[bestCombination][1];
+	sr = combinacoes[bestCombination][2];
+
+	return bestCombination;
+
+}
+
+void  valoresIniciaisDeOrdemCombinado(int** itens, double* PiValue, float* nextStep, int* ordem, int quantidade, int classe, float* heuristica) {
+
+	int j;
+
+	for (j = 0; j < quantidade; j++) {
+
+		if (classe == 9) {
+
+			ordem[j] = j;
+			nextStep[j] = (float)PiValue[itens[j][5]] * heuristica[j];
+
+		}
+		else {
+
+			ordem[j] = j;
+			nextStep[j] = (float)PiValue[j] * heuristica[j];
+
+		}
+
+
+	}
+
+}
+
+
+void  valoresIniciaisDeOrdem(int** itens, double* PiValue, float* nextStep, int* ordem, int quantidade, int classe) {
+
+	int j;
+
+	for (j = 0; j < quantidade; j++) {
+
+		if (classe == 9) {
+
+			ordem[j] = j;
+			nextStep[j] = (float)PiValue[itens[j][5]];
+
+		}
+		else {
+
+			ordem[j] = j;
+			nextStep[j] = (float)PiValue[j];
+
+		}
+
+
+	}
+
+}
+
+/*
+void testeOrdenamento(int* ordem, float* nextStep, int quantidade) {
+
+	int i;
+	float anterior = nextStep[ordem[0]];
+
+	for (i = 0; i < quantidade; i++) {
+
+		if (nextStep[ordem[i]] > anterior) {
+
+			printf("\nErro no ordenamento! Atual %f, maior que anterior %f\n");
+
+			system("pause");
+
+		}
+
+		anterior = nextStep[ordem[i]];
+
+	}
+
+	printf("\nPassou no teste Ordenamento\n");
+
+	system("pause");
+
+}*/
+
+
+NoBin* CriaNovosPadroes(int combinacao, int** itens, float** heuristicas, int* ordem, double* PiValue, int quantidade, int tamanho[], int classe, float* nextStep) {
+
+	NoBin* auxBin = NULL, * auxBin1 = NULL;
+	NoBin* topoBin = NULL;
+	int k, l = 0;
+
+	valoresIniciaisDeOrdem(itens, PiValue, nextStep, ordem, quantidade, classe);
+
+	//printf("\nAtribui valores iniciais de ordem\n");
+	//system("pause");
+
+	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
+
+	//printf("\nOrdenou itens\n");
+	//system("pause");
+
+//	for (k = 0; k < 4; k++) {
+
+		//printf("\nDefinido o\n");
+		//system("pause");
+
+//		o = combinacoes[k][1];
+
+		//printf("\nDefinido o\n");
+		//system("pause");
+
+//		sr = combinacoes[k][2];
+
+		//printf("\nDefinido sr\n");
+		//system("pause");
+
+	auxBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+
+	//printf("\nSolucao com combinacao %i\n", k);
+	//system("pause");
+
+//		auxBin1 = auxBin;
+
+//		while (auxBin1->proximo) {
+
+//			auxBin1 = auxBin1->proximo;
+
+//		}
+
+//		auxBin1->proximo = topoBin;
+	topoBin = auxBin;
+
+	//	}
+
+		//printf("\nCriou padrao combinado apenas com dual\n");
+		//system("pause");
+
+	//	while (l < 10) {
+
+	valoresIniciaisDeOrdemCombinado(itens, PiValue, nextStep, ordem, quantidade, classe, heuristicas[combinacao]);
+
+	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
+
+	//		for (k = 0; k < 4; k++) {
+
+	//			o = combinacoes[k][1];
+
+	//			sr = combinacoes[k][2];
+
+	auxBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+
+	auxBin1 = auxBin;
+
+	while (auxBin1->proximo) {
+
+		auxBin1 = auxBin1->proximo;
+
+	}
+
+	auxBin1->proximo = topoBin;
+	topoBin = auxBin;
+
+	//		}
+
+	//		l = l + 2;
+	//	}
+
+
+	//	printf("\nCriou padrao combinado dual e heuristica\n");
+	//	system("pause");
+
+	return topoBin;
+
+}
+
+void alocaMemoriaUmaVariavel(int** cind, double** cval, int quantidade) {
+
+	*cind = (int*)malloc(quantidade * sizeof(int)); //armazena os ï¿½ndices da restriï¿½ï¿½o (inteiro)
+
+	*cval = (double*)malloc(quantidade * sizeof(double)); //armazena os valores dos multiplicadores das variï¿½veis (double)
+
+}
+
+void zeraQtdTiposBin(int* qtdTiposBin, int totalTipos) {
+
+	int j;
+
+	for (j = 0; j < totalTipos; j++) {
+
+		qtdTiposBin[j] = 0;
+
+	}
+
+}
 
 int preencheUmaVariavel(int* cind, double* cval, NoBin* auxBin) {
 
@@ -2969,8 +4014,6 @@ int preencheUmaVariavel(int* cind, double* cval, NoBin* auxBin) {
 	NoPack* auxPack = auxBin->bin.conteudo;
 
 	while (auxPack) {
-
-		//testeMemoriaVariavel(nz, auxBin->bin.qtdeItens);
 
 		cind[nz] = auxPack->pack.id;
 
@@ -2983,6 +4026,26 @@ int preencheUmaVariavel(int* cind, double* cval, NoBin* auxBin) {
 
 	return nz;
 
+}
+
+int preencheUmaVariavelClass9(int* cind, double* cval, int qtdTipos, int* totalTiposNoBin) {
+
+	int nz = 0, k;
+
+	for (k = 0; k < qtdTipos; k++) {
+
+		if (totalTiposNoBin[k] > 0) {
+
+			cind[nz] = k;
+
+			cval[nz] = totalTiposNoBin[k];
+
+			nz++;
+		}
+
+	}
+
+	return nz;
 }
 
 
@@ -2998,79 +4061,54 @@ NoBin* insereColuna(NoBin* colunaAInserir, NoBin* ultimaColunaInserida, int idCo
 
 }
 
-int montaModelo(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int quantidade, int* m) {
 
-	int error = 0;
-	int nz = 0;
-	int n = quantidade;
-	int* cbeg = NULL; //indica onde a restrição se inicia no array cind
-	int* clen = NULL;//indica quantos índices não nulos existem na restrição
-	int* cind = NULL;//contém os indices da variável na restrição
-	double* cval = NULL;//indica o multiplicador da variavel na restrição
-	double* rhs = NULL; //lado direito da restrição
-	char* sense = NULL; // sinal da restrição
-	char* senseMIP = NULL;
-	double* lb = NULL; //lower bound das variáveis
-	double* obj = NULL; //armazena os valores da função objetivo
-	char* ctype = NULL; //tipo da variável
-	char* ctypeMIP = NULL; //tipo da variável
 
-	NoBestStart* topoBestStart, * auxBestStart;
+int fixaUmaVariavel(GRBmodel* model, double* valorVariaveis, int m, int* custo_reduzido_negativo) {
 
-	NoSoluction* auxSoluction = geralSoluction;
-	NoBin* topoBin = NULL;
+	int k, id = -1, error = 0, arredondado = 0;
+	double maiorValor = 0.0, fractionalPart, integerPart;
 
-	alocaMemoriaRestricao(&rhs, &sense, &senseMIP, n);
+	for (k = 0; k < m; k++) {
 
-	criaRestricoes(rhs, sense, senseMIP, n);
+		if (valorVariaveis[k] > 0.0 && floor(valorVariaveis[k]) < ceil(valorVariaveis[k])) {
 
-	while (auxSoluction) {
+			fractionalPart = modf(valorVariaveis[k], &integerPart);
 
-		*m = *m + auxSoluction->soluction.value; // quantidade de variáveis
+			if (fractionalPart >= teta) {
 
-		nz = nz + n; //quantidade de indices nao zero nas restricoes
+				error = GRBsetdblattrelement(model, GRB_DBL_ATTR_LB, k, integerPart + 1.0);
+				if (error) { printf("\nErro ao atribuir Lower Bound a variavel(1)\n"); return error; }
 
-		auxSoluction = auxSoluction->proximo;
+				if (arredondado == 0) {
+					*custo_reduzido_negativo = 1;
+					arredondado = 1;
+				}
+
+			}
+			else if (arredondado == 0 && maiorValor < fractionalPart) {
+
+				id = k;
+				maiorValor = fractionalPart;
+
+			}
+
+		}
+
+	}
+
+	if (id > -1 && arredondado == 0) {
+
+
+		fractionalPart = modf(valorVariaveis[id], &integerPart);
+
+		*custo_reduzido_negativo = 1;
+		error = GRBsetdblattrelement(model, GRB_DBL_ATTR_LB, id, integerPart + 1.0);
+
+		//printf("\n\nArredondada variavel %lf para %lf\n", valorVariaveis[id], integerPart + 1.0);
 
 	}
 
-	alocaMemoriaVariaveis(&cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, &ctypeMIP, *m, nz);
-
-	criaFuncaoObjetivo(lb, obj, *m);
-
-	topoBestStart = preencheVariaveis(ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, ctypeMIP, *m);
-
-	error = GRBsetintparam(env, "StartNumber", -1);
-	if (error) return error;
-
-	error = GRBloadmodel(env, model, "Linear", *m, n,
-		GRB_MINIMIZE, 0.0, obj, sense, rhs,
-		cbeg, clen, cind, cval, lb, NULL,
-		ctype, NULL, NULL);
-	if (error) return error;
-
-	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
-		GRB_MINIMIZE, 0.0, obj, senseMIP, rhs,
-		cbeg, clen, cind, cval, lb, NULL,
-		ctypeMIP, NULL, NULL);
-	if (error) return error;
-
-	error = GRBupdatemodel(*modelMIP);
-	if (error) return error;
-
-	auxBestStart = topoBestStart;
-
-	while (auxBestStart) {
-
-		error = GRBsetdblattrarray(*modelMIP, "Start", 0, *m, auxBestStart->bestStart.mipStart);
-		if (error) return error;
-
-		topoBestStart = auxBestStart;
-		auxBestStart = auxBestStart->proximo;
-		free(topoBestStart);
-
-
-	}
+	if (error) printf("\nErro ao atribuir Lower Bound a variavel(2)\n");
 
 	return error;
 
@@ -3101,477 +4139,829 @@ int verificaSeEhInteiro(GRBmodel* model, int m) {
 
 }
 
-int obtemResultado(GRBmodel* model, double** valorVariaveis, int m) {
+//##################################### testes RMP ################################################
+/*
+void testeIntegridadeColunas(NoBin* primeiraColuna, NoBin* ultimaColuna, int m) {
 
-	int erro;
-
-	*valorVariaveis = (double*)malloc(m * sizeof(double));
-
-	erro = GRBgetdblattrarray(model, "X", 0, m, *valorVariaveis);
-
-	return erro;
-}
-
-
-void salvaSolucao(NoSoluction** columnSoluction, NoBin* primeiraColuna, double* valorVariaveis, int m, int valor, int totalTime) {
-
-	NoBin* auxBin = primeiraColuna, * topoBin = NULL;
-
-	int j;
-
-	for (j = 0; j < m; j++) {
-
-		if (valorVariaveis[j] > 0.0) {
-
-			auxBin->proximo = topoBin;
-			topoBin = auxBin;
-
-		}
-
-		auxBin = auxBin->proximoColuna;
-
-	}
-
-	*columnSoluction = empilharSoluction(*columnSoluction, topoBin, 0, valor, 0.0, totalTime);
-
-}
-
-
-void excluiItensDuplicados(int* usedItens, NoSoluction* columnSoluction, int** itens) {
-
-	NoBin* auxBin = columnSoluction->soluction.bins;
-
-	NoPack* auxPack = NULL;
+	int i=0;
+	NoBin* auxBin = primeiraColuna, *binAnterior = primeiraColuna;
 
 	while (auxBin) {
 
-		auxPack = auxBin->bin.conteudo;
+		i++;
 
-		while (auxPack) {
+		if (i > m) {
 
-			if (usedItens[auxPack->pack.id] == 0) {// item ainda não utilizado
-
-				usedItens[auxPack->pack.id] = 1;
-
-			}
-			else {
-
-				deletarPack(auxBin, auxPack->pack.id, itens[auxPack->pack.id][1] * itens[auxPack->pack.id][2] * itens[auxPack->pack.id][3]);
-
-			}
-
-			auxPack = auxPack->proximo;
+			printf("\nErro! Variavel m: %d, bin atual: %d\n", m, i);
+			system("pause");
 
 		}
 
-		auxBin = auxBin->proximo;
+		binAnterior = auxBin;
+
+		auxBin = auxBin->proximoColuna;
 	}
 
+	if(i<m) {
+
+		printf("\nErro! Variavel m: %d, bin atual: %d\n", m, i);
+		system("pause");
+
+	}
+
+	if(ultimaColuna != binAnterior) {
+
+		printf("\nErro! Ultima Coluna: %p, ultima Bin: %p\n", ultimaColuna, binAnterior);
+		system("pause");
+
+	}
+
+	printf("\nPassou no teste Integridade Colunas\n");
+
+	system("pause");
 
 }
 
-void  valoresIniciaisDeOrdem(double* PiValue, float** nextStep, int* ordem, int quantidade) {
+void testeQtdTiposBin(int* qtdTiposBin, int totalTipos, int totalTiposBin, NoPack* topoPack, int **itens) {
 
-	int j;
+	NoPack* auxPack = topoPack;
 
-	for (j = 0; j < quantidade; j++) {
+	int* referencia = calloc(totalTipos, sizeof(int));
 
-		ordem[j] = j;
-		nextStep[j][0] = (float)PiValue[j];
-		nextStep[j][1] = (float)PiValue[j];
+	int nz = 0;
 
-	}
+	while (auxPack) {
 
-}
+		if (referencia[itens[auxPack->pack.id][5]] == 0) nz++;
 
-NoBin* CriaNovosPadroes(int** itens, float** nextStep, int* ordem, double* PiValue, int quantidade, int tamanho[], int totalTime) {
+		referencia[itens[auxPack->pack.id][5]] = referencia[itens[auxPack->pack.id][5]] + 1;
 
-	NoBin* auxBin = NULL, * auxBin1 = NULL;
-	NoBin* topoBin = NULL;
-	int k;
+		if (referencia[itens[auxPack->pack.id][5]] > qtdTiposBin[itens[auxPack->pack.id][5]]) {
 
-	//Salva no vetor Ordem Apenas os itens com valores Duais Positivos
-	valoresIniciaisDeOrdem(PiValue, nextStep, ordem, quantidade);
-
-	//ordena pelos valores das variáveis duais
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	topoBin = binPack(itens, ordem, quantidade, tamanho);
-
-	for (k = 0; k < quantidade; k++) {
-
-		nextStep[ordem[k]][0] = nextStep[ordem[k]][1] / (float)(itens[ordem[k]][1] * itens[ordem[k]][2] * itens[ordem[k]][3]);
-
-	}
-
-	//ordena pelos valores das variáveis duais dividido pelo volume
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	for (k = 0; k < quantidade; k++) {
-
-		nextStep[ordem[k]][0] = nextStep[ordem[k]][1] / (float)(itens[ordem[k]][1] + itens[ordem[k]][2] + itens[ordem[k]][3]);
-
-	}
-
-	//ordena pelos valores das variáveis duais dividido pela soma dos lados
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	for (k = 0; k < quantidade; k++) {
-
-		nextStep[ordem[k]][0] = nextStep[ordem[k]][1] / (float)itens[ordem[k]][1];
-
-	}
-
-	//ordena pelos valores das variáveis duais dividido pelo lado x
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	for (k = 0; k < quantidade; k++) {
-
-		nextStep[ordem[k]][0] = nextStep[ordem[k]][1] / (float)itens[ordem[k]][2];
-
-	}
-
-	//ordena pelos valores das variáveis duais dividido pelo lado y
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	for (k = 0; k < quantidade; k++) {
-
-		nextStep[ordem[k]][0] = nextStep[ordem[k]][1] / (float)itens[ordem[k]][3];
-
-	}
-
-	//ordena pelos valores das variáveis duais dividido pelo lado z
-	quicksort(0, quantidade - 1, nextStep, ordem);
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-
-	return topoBin;
-
-}
-
-
-int fixaUmaVariavel(GRBmodel* model, double* valorVariaveis, int m) {
-
-	int k, id = -1, error = 0;
-	double maiorValor = 0.0;
-
-	for (k = 0; k < m; k++) {
-
-		if (valorVariaveis[k] > (double)teta && valorVariaveis[k] > maiorValor) {
-
-			id = k;
-			maiorValor = valorVariaveis[k];
+			printf("\nErro! Referencia: %d, qtdTiposBin: %d\n", referencia[itens[auxPack->pack.id][5]], qtdTiposBin[itens[auxPack->pack.id][5]]);
+			system("pause");
 
 		}
 
+		auxPack = auxPack->proximo;
 
 	}
 
-	if (id > -1) {
+	if (nz != totalTiposBin) {
 
-		error = GRBsetdblattrelement(model, GRB_DBL_ATTR_LB, id, 1.0);
+		printf("\nErro! nz: %d, totalTiposBin: %d\n", nz, totalTiposBin);
+		system("pause");
 
 	}
 
-	free(valorVariaveis);
+	for (nz = 0; nz < totalTipos; nz++) {
 
-	return error;
+		if (referencia[nz] != qtdTiposBin[nz]) {
+
+			printf("\nErro! tipo %: referencia %d, qtdTiposBin: %d\n", nz, referencia[nz], qtdTiposBin[nz]);
+			system("pause");
+
+		}
+
+	}
+
+
+	free(referencia);
+
+	printf("\nPassou no teste Quantidade Tipos na Bin\n");
+
+	system("pause");
+
+}
+*/
+
+void printLog(int passo) {
+
+	FILE* pont_arqu;
+
+	pont_arqu = fopen("log.txt", "a");
+
+	fprintf(pont_arqu, " %d", passo);
+
+	if (passo == 42) fprintf(pont_arqu, "\n");
+
+	fclose(pont_arqu);
 
 }
 
+int defineSeed(int classe, int quantidade, int instancia) {
+
+	int semente = 0, total, contador, classeAtual, quantidadeAtual, instanciaAtual, temp;
+
+	char texto[30];
+	char texto1[3];
+	char texto2[] = ".txt";
+
+	strcpy(texto, "seeds/default-seeds-");
+
+	sprintf(texto1, "%d", classe);
+
+	strcat(texto, texto1);
+	strcat(texto, texto2);
+
+	FILE* file;
+	file = fopen(texto, "r");
+
+	fscanf(file, "%i", &total);
+
+	if (classe != 9) {
+
+		for (contador = 0; contador < total; contador++) {
+
+			fscanf(file, "%i", &quantidadeAtual);
+			fscanf(file, "%i", &instanciaAtual);
+			fscanf(file, "%i", &temp);
+
+			if (quantidadeAtual == quantidade && instanciaAtual == instancia) {
+
+				semente = temp;
+				contador = total;
+
+			}
+
+		}
+
+	}
+	else {
+
+		for (contador = 0; contador < total; contador++) {
+
+			fscanf(file, "%i", &instanciaAtual);
+			fscanf(file, "%i", &temp);
+
+			if (instanciaAtual == instancia) {
+
+				semente = temp;
+				contador = total;
+
+			}
+
+		}
+	}
+
+	fclose(file);
+
+	if (semente == 0) {
+
+		printf("Erro!Semente nao encontrada");
+		system("pause");
+	}
+
+	return semente;
+}
+
+
+void defineSettings(int classe, int quantidade) {
+
+	int actualACOTimeLimit = 0, actualRMPTimeLimit = 0, actualMIPTimeLimit = 0, total, contador, classeAtual, quantidadeAtual, temp;
+
+	char texto[30];
+
+	FILE* file;
+
+	if (classe < 9) {
+
+		strcpy(texto, "settings/times-1-8.txt");
+
+		file = fopen(texto, "r");
+
+		fscanf(file, "%i", &total);
+
+		for (contador = 0; contador < total; contador++) {
+
+			fscanf(file, "%i", &classeAtual);
+			fscanf(file, "%i", &quantidadeAtual);
+			fscanf(file, "%i", &temp);
+			fscanf(file, "%i", &actualRMPTimeLimit);
+			fscanf(file, "%i", &actualMIPTimeLimit);
+
+			if (quantidadeAtual == quantidade && classeAtual == classe) {
+
+				actualACOTimeLimit = temp;
+				contador = total;
+
+			}
+
+		}
+
+	}
+	else {
+
+		strcpy(texto, "settings/times-9-10.txt");
+
+		file = fopen(texto, "r");
+
+		fscanf(file, "%i", &total);
+
+		for (contador = 0; contador < total; contador++) {
+
+			fscanf(file, "%i", &quantidadeAtual);
+			fscanf(file, "%i", &temp);
+			fscanf(file, "%i", &actualRMPTimeLimit);
+			fscanf(file, "%i", &actualMIPTimeLimit);
+
+			if (quantidadeAtual == classe || quantidadeAtual == quantidade) {
+
+				actualACOTimeLimit = temp;
+				contador = total;
+
+			}
+
+		}
+
+	}
+
+	fclose(file);
+
+	if (actualACOTimeLimit == 0) {
+
+		printf("Erro!Nao encontrado os tempos limites em settings");
+		system("pause");
+
+	}
+	else {
+
+		timeLimitACO = actualACOTimeLimit;
+		timeLimitRMP = actualRMPTimeLimit;
+		timeLimitMIP = actualMIPTimeLimit;
+
+	}
+
+}
+
+void defineQAnt(int quantidade) {
+
+	int total, contador, quantidadeAtual;
+	float temp, actualQAnt = 0.0;
+
+	char texto[30];
+
+	FILE* file;
+
+	strcpy(texto, "settings/QAnt-10.txt");
+
+	file = fopen(texto, "r");
+
+	fscanf(file, "%i", &total);
+
+	for (contador = 0; contador < total; contador++) {
+
+		fscanf(file, "%i", &quantidadeAtual);
+		fscanf(file, "%f", &temp);
+
+		if (quantidadeAtual == quantidade) {
+
+			actualQAnt = (float)temp;
+			contador = total;
+
+		}
+
+	}
+
+	fclose(file);
+
+	if (actualQAnt == 0.0) {
+
+		printf("Erro!Nao encontrado os tempos limites em settings");
+		system("pause");
+
+	}
+	else {
+
+		QAnt = actualQAnt;
+
+	}
+
+}
 
 int main() {
 
-	int idSoluction, tempo, opcao, tamanho[3], classe, quantidade, instancia, totalTime, ants, parcialTime, actualAnt, erro;
-	float lowerBound, denominator, decrease, utilization;
-	NoBin* topoBin, * auxBin, * ultimaColuna = NULL, * primeiraColuna = NULL;
-	NoSoluction* bestIteration, * bestOfBest, * geralSoluction;
-	NoSoluction* columnSoluction = NULL;
-	NoPack* auxPack;
-	//Variaveis CG
+	//#####################variaveis gerais#############################################
 
-	GRBenv* env = NULL; //criação do ambiente
+	int opcao, tamanho[3], classe = 0, quantidade, instancia, totalTime, initialTime, tempoUltimaMelhoria, espera;
+	unsigned int semente = (unsigned)time(NULL);
+	int** itens;
+	int k;
+	int continuousLowerBound;
+
+	int ants, actualAnt, bestCombination;
+	int quantidadeCombinacoes;
+	int quantidadeOrdens;
+	float utilization, decrease, totalProbabilityCombination;
+	int* ordem, * bestOrder;
+	float** heuristicas;
+	float** pheromones;
+	int **combinacoes;
+	float *denominator, *probabilityCombination;
+
+	//#####################variaveis Solucao#####################
+
+	int idSoluction, erro;
+	NoBin* topoBin, * primeiraColuna = NULL, * ultimaColuna = NULL, * auxBin = NULL;
+	NoPack* auxPack = NULL;
+	NoSoluction* geralSoluction, * bestOfBest, * bestIteration, * coveringSoluction;
+	NoSoluction* columnSoluction = NULL, * roudingSoluction = NULL;
+
+	//#######################variaveis RMP######################
+	GRBenv* env = NULL; //criaï¿½ï¿½o do ambiente
 	GRBmodel* model = NULL;
-	GRBmodel* modelMIP = NULL; //criação do modelo
-	int idColuna = 0; //id da última coluna adicionada
-	int* cind = NULL;//contém os indices da variável na restrição
-	double* cval = NULL;//indica o multiplicador da variavel na restrição
-	double* valorVariaveis = NULL;
+	int idColuna = 0; //id da ï¿½ltima coluna adicionada
+	int custo_reduzido_negativo = 1; // se hï¿½ custo reduzido negativo
+	int integer = 0;  //se a soluï¿½ï¿½o ï¿½ inteira
+	int totalTipos;
+	double reducedCost; //valor do custo reduzido do padrï¿½o atual
+	double* PiValue;
+	int actualIteration = 0;
+	double referenceImprovement;
+	int totalTiposBin, * qtdTipos = NULL, * qtdTiposBin = NULL;
+	float* nextStep;
 
-	int  nz = 0, i, j; //nz não zeros, i = x, j = contador
+	//#######################variaveis MIP######################
+	GRBmodel* modelMIP = NULL; //criaï¿½ï¿½o do modelo
+	double* valorVariaveis = NULL;
+	int  nz = 0, i, j; //nz nï¿½o zeros, i = x, j = contador
 	int status;
 	double objval;
+	int parcialTime;
+	int error = 0, m = 0, n, nova_m = 0;
 
-	int error = 0, m = 0, n;
+	error = GRBloadenv(&env, NULL);
+	if (error) { printf("\nErro ao montar o ambiente\n"); goto QUIT; }
 
-	int custo_reduzido_negativo = 1; // se há custo reduzido negativo
-	int integer = 0; //se a solução é inteira
-	double reducedCost; //valor do custo reduzido do padrão atual
-
-	unsigned int semente = (unsigned)time(NULL);
-
-	int** itens;
-	int* ordem, * bestOrder, * usedItens;
-	float** nextStep;
-	double* PiValue;
-
+	//error = GRBgetdblparam(env, GRB_DBL_PAR_INTFEASTOL, &gurobiTolerance);
+	//if (error) { printf("\nErro ao obter o valor da IntFeasTol\n"); goto QUIT; }
 
 	importaParametros();
 
-	printf("\tVersion 0.0.12\t\tMethods ACO+CG\n\tDetails:");
-	printf("\n\tMultiple Orientations -included Mahvash criteria- and multiple Residual Spaces\n");
-	printf("\tIntegral Columns, Salve seed\n");
-	printf("\tLarge Instances\n");
-	printf("\n\tAuthor: Daniel Bento Maia\tDate: 03/08/2024\n");
+	printf("\tBPP Version 0.1.6\t\tMethods EP\n\tDetails: Insert News Combinations");
+	printf("\n\tAuthor: Daniel Bento Maia\tDate: 11/11/2025\n");
 
-	printParams();
+	if (classe == 9) {
 
-	printf("\n\n\tTo change the parameters type 2; to solve one problem, type 1; to exit, type 0\n\t");
-	scanf("%d", &opcao);
+		quantidadeCombinacoes = 10;
+		quantidadeOrdens = 5;
 
-	if (opcao == 2) {
+	}
+	else {
 
-		obtemValoresParametros();
+		quantidadeCombinacoes = 7;
+		quantidadeOrdens = 4;
 
-		updateParams();
-
-		opcao = 1;
 	}
 
+	/*	printf("\n\n\tTo change the parameters type 2; to solve one problem, type 1\n\t");
+		scanf("%d", &opcao);
 
-	while (opcao == 1) {
+		if (opcao == 2) {
 
-		printf("\n\n\tPlease type class, quantity of itens and instance:");
-		printf("\n\tFor example, to solve file 1_50_3.txt type 1 50 3\n\n\t");
-		scanf("%d %d %d", &classe, &quantidade, &instancia);
+			obtemValoresParametros();
 
-		itens = malloc(quantidade * sizeof(int*));
-		nextStep = malloc(quantidade * sizeof(float*));
-		ordem = (int*)malloc(quantidade * sizeof(int));
-		bestOrder = (int*)malloc(quantidade * sizeof(int));
-		PiValue = (double*)malloc(quantidade * sizeof(double));
-		usedItens = (int*)calloc(quantidade, sizeof(int));
+			updateParams();
 
-		int k;
+			opcao = 1;
+		}
+	*/
+
+	printf("\n\n\tPlease type class, quantity of itens and instance:");
+	printf("\n\tFor example, to solve file 1_50_3.txt type 1 50 3\n\n\t");
+	scanf("%d %d %d", &classe, &quantidade, &instancia);
+
+
+	denominator = malloc(quantidadeCombinacoes * sizeof(float));
+	probabilityCombination = malloc(quantidadeCombinacoes * sizeof(float));
+
+	combinacoes = malloc(quantidadeCombinacoes * sizeof(int*));
+	pheromones = malloc(quantidadeCombinacoes * sizeof(float*));
+	heuristicas = malloc(quantidadeOrdens * sizeof(float*));
+
+	defineSettings(classe, quantidade);
+
+	espera = (timeLimitACO * 0.15) + 1;
+
+	if (classe == 10) defineQAnt(quantidade);
+
+	itens = malloc(quantidade * sizeof(int*));
+	ordem = (int*)malloc(quantidade * sizeof(int));
+	bestOrder = (int*)malloc(quantidade * sizeof(int));
+	nextStep = malloc(quantidade * sizeof(float));
+
+	for (k = 0; k < quantidade; k++) {
+
+		itens[k] = malloc(6 * sizeof(int));
+
+	}
+
+	for (k = 0; k < quantidadeOrdens; k++) {
+
+		heuristicas[k] = malloc(quantidade * sizeof(float));
+
+	}
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		pheromones[k] = malloc(quantidade * sizeof(float));
+		combinacoes[k] = malloc(3 * sizeof(int));
+
+	}
+
+	preencheCombinacoes(combinacoes, quantidadeCombinacoes);
+
+	semente = defineSeed(classe, quantidade, instancia);
+
+	srand(semente);
+
+	//	printParams();
+
+	tamanhoInstancia(classe, tamanho);
+
+	totalTime = 0;
+	idSoluction = 0;
+	topoBin = NULL;
+	geralSoluction = NULL;
+	bestIteration = NULL;
+	bestOfBest = NULL;
+	roudingSoluction = NULL;
+	primeiraColuna = NULL;
+	ultimaColuna = NULL;
+	auxPack = NULL;
+	columnSoluction = NULL;
+	roudingSoluction = NULL;
+	model = NULL;
+	idColuna = 0;
+	custo_reduzido_negativo = 1;
+	integer = 0;
+	actualIteration = 0;
+	qtdTipos = NULL;
+	qtdTiposBin = NULL;
+	modelMIP = NULL;
+	valorVariaveis = NULL;
+	nz = 0;
+	error = 0; m = 0; nova_m = 0;
+
+
+	if (classe == 9) {
+
+		totalTipos = importaArquivoClass9(itens, heuristicas, classe, quantidade, instancia, tamanho);
+
+		PiValue = (double*)malloc(totalTipos * sizeof(double));
+
+		qtdTipos = calloc(totalTipos, sizeof(int));
 
 		for (k = 0; k < quantidade; k++) {
 
-			itens[k] = malloc(6 * sizeof(int*));
-			nextStep[k] = malloc(4 * sizeof(float*));
+			qtdTipos[itens[k][5]] = qtdTipos[itens[k][5]] + 1;
 
 		}
 
-		NoProbability* topoProbability = NULL;
+	}
+	else {
 
-		topoProbability = montaPilhaProbabilidade(quantidade);
+		totalTipos = quantidade;
 
-		tamanhoInstancia(classe, tamanho);
+		importaArquivo(itens, heuristicas, classe, quantidade, instancia, tamanho);
 
-		ants = ((float)quantidade) * QAnt;
+		PiValue = (double*)malloc(quantidade * sizeof(double));
 
-		decrease = (float)pheromone / (float)quantidade;
+	}
 
-		idSoluction = 0;
-		totalTime = 0;
-		topoBin = NULL;
-		bestOfBest = NULL;
-		geralSoluction = NULL;
+	for (k = 0; k < totalTipos; k++) {
 
-		importaArquivo(itens, classe, quantidade, instancia, tamanho);
+		PiValue[k] = 0.1;
 
-		error = GRBloadenv(&env, NULL);
+	}
+
+	printParams();
+
+	initialTime = time(NULL);
+
+	firstOrientation(itens, quantidade);
+
+	NoProbability* topoProbability = NULL;
+
+	topoProbability = montaPilhaProbabilidade(quantidade, pheromones, heuristicas, quantidadeCombinacoes, quantidadeOrdens);
+
+	ants = ((float)quantidade) * QAnt;
+
+	decrease = (float)pheromone / (float)quantidade;
+
+	continuousLowerBound = volumeTotal / (tamanho[0] * tamanho[1] * tamanho[2]);
+
+	totalProbabilityCombination = 0.0;
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		ordenaValores(heuristicas[combinacoes[k][0]], ordem, quantidade);
+
+		o = combinacoes[k][1];
+
+		sr = combinacoes[k][2];
+
+		topoBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+
+		utilization = calcSmallerUtilization(topoBin, tamanho);
+
+		geralSoluction = empilharSoluction(geralSoluction, topoBin, idSoluction, topoBin->bin.idt + 1, (float)topoBin->bin.idt + (float)1.0 + utilization, 0);
+
+		idSoluction++;
+
+		probabilityCombination[k] = ((float)continuousLowerBound) / geralSoluction->soluction.utilization;
+
+		totalProbabilityCombination = totalProbabilityCombination + probabilityCombination[k];
+
+		if (bestOfBest == NULL || bestOfBest->soluction.utilization > geralSoluction->soluction.utilization) {
+
+
+			bestOfBest = geralSoluction;
+
+		}
+
+	}
+
+	printf("\n\tSolucao %d\t\t%2f", bestOfBest->soluction.id, bestOfBest->soluction.utilization);
+
+	calculaProbabilityCombination(probabilityCombination, totalProbabilityCombination, quantidadeCombinacoes);
+
+	tempoUltimaMelhoria = time(NULL);
+
+	//AQUI ACONTECE O ACO
+	while (totalTime < timeLimitACO && time(NULL) - tempoUltimaMelhoria < espera) {
+
+		actualAnt = 0;
+
+		calcDenominator(combinacoes, heuristicas, pheromones, quantidade, topoProbability, denominator, quantidadeCombinacoes);
+
+		bestIteration = NULL;
+
+		while (actualAnt <= ants) {
+
+			k = sorteiaProbabilidadeCombinacao(probabilityCombination, quantidadeCombinacoes);
+
+			calcProbability(quantidade, denominator, topoProbability, ordem, k);
+
+			topoBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+
+			utilization = calcSmallerUtilization(topoBin, tamanho);
+
+			if (bestIteration == NULL || bestIteration->soluction.utilization > (float)topoBin->bin.idt + (float)1.0 + utilization) {
+
+				if (bestIteration != NULL) {
+
+
+					freeMemorySoluction(bestIteration);
+					bestIteration = NULL;
+
+				}
+
+				bestIteration = empilharSoluction(bestIteration, topoBin, idSoluction, topoBin->bin.idt + 1, (float)topoBin->bin.idt + (float)1 + utilization, totalTime);
+
+				idSoluction++;
+
+				copyVector(ordem, bestOrder, quantidade);
+
+				bestCombination = k;
+			}
+			else {
+
+				freeMemoryBin(topoBin);
+
+			}
+
+			totalTime = time(NULL) - initialTime;
+
+			actualAnt++;
+
+		}
+
+		bestIteration->proximo = geralSoluction;
+
+		geralSoluction = bestIteration;
+
+		totalProbabilityCombination = updateProbabilityCombination(probabilityCombination, totalProbabilityCombination, bestCombination, continuousLowerBound / bestIteration->soluction.utilization, quantidadeCombinacoes);
+
+		updatePheromone(bestOrder, pheromones[k], quantidade, continuousLowerBound / bestIteration->soluction.utilization, decrease);
+
+		if (bestIteration->soluction.utilization < bestOfBest->soluction.utilization) {
+
+			bestOfBest = bestIteration;
+
+			tempoUltimaMelhoria = time(NULL);
+
+			printf("\n\tSolucao %d\t\t%2f", bestOfBest->soluction.id, bestOfBest->soluction.utilization);
+
+		}
+
+
+	}
+
+	bestOfBest->soluction.time = time(NULL) - initialTime;
+
+	primeiraColuna = geralSoluction->soluction.bins;
+
+	bestCombination = selectBestCombination(combinacoes, probabilityCombination, quantidadeCombinacoes);
+
+	referenceImprovement = (double)bestOfBest->soluction.utilization;
+
+	//printLog(0);
+
+
+	if (classe == 9) {
+		error = montaModeloClass9(env, &model, &modelMIP, &ultimaColuna, geralSoluction, &m, totalTipos, qtdTipos, itens);
 		if (error) goto QUIT;
 
-		srand(semente);
+		//printLog(1);
 
-		tempo = time(NULL);
-
-		firstOrientation(itens, quantidade);
-
-		lowerBound = calcHeuristic(itens, nextStep, quantidade);
-
-		lowerBound = lowerBound / ((float)(tamanho[0] * tamanho[1] * tamanho[2]));
-
-		while (totalTime < timeLimitACO) {
-
-			actualAnt = 0;
-
-			denominator = calcDenominator(nextStep, quantidade, topoProbability);
-
-			bestIteration = NULL;
-
-			while (actualAnt <= ants) {
-
-				calcProbality(quantidade, denominator, topoProbability, ordem);
-
-				topoBin = binPack(itens, ordem, quantidade, tamanho);
-
-				totalTime = time(NULL) - tempo;
-
-				utilization = calcSmallerUtilization(topoBin, tamanho);
-
-				if (bestIteration == NULL || bestIteration->soluction.utilization > (float)topoBin->bin.idt + (float)1 + utilization) {
-
-					if (bestIteration != NULL) {
-
-
-						freeMemorySoluction(bestIteration);
-						bestIteration = NULL;
-
-
-					}
-
-					bestIteration = empilharSoluction(bestIteration, topoBin, idSoluction, topoBin->bin.idt + 1, (float)topoBin->bin.idt + (float)1 + utilization, totalTime);
-
-					copyVector(ordem, bestOrder, quantidade);
-
-				}
-				else {
-
-					freeMemoryBin(topoBin);
-
-
-				}
-
-				actualAnt++;
-
-			}
-
-			bestIteration->proximo = geralSoluction;
-
-			geralSoluction = bestIteration;
-
-			updatePheromone(bestOrder, nextStep, quantidade, lowerBound / bestIteration->soluction.utilization, decrease);
-
-			if (bestOfBest == NULL || bestIteration->soluction.value < bestOfBest->soluction.value) {
-
-				if (bestOfBest) {
-
-					bestOfBest->soluction.best = 0;
-
-				}
-
-				bestOfBest = empilharBestSoluction(bestOfBest, bestIteration);
-
-				bestOfBest->soluction.best = 1;
-
-			}
-
-		}
-
-		primeiraColuna = geralSoluction->soluction.bins;
-
+	}
+	else {
 		error = montaModelo(env, &model, &modelMIP, &ultimaColuna, geralSoluction, quantidade, &m);
 		if (error) goto QUIT;
 
-		error = GRBoptimize(model);
-		if (error) goto QUIT;
+		//printLog(2);
 
-		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, quantidade, PiValue);
-		if (error) goto QUIT;
+	}
+
+	//	printf("\nMontou modelo\n"); system("pause");
+
+		//###############################################################################################################
+
+		/*	error = GRBoptimize(model);
+		if (error) { printf("\nErro ao otimizar o modelo RMP\n"); goto QUIT; }
+
+		//printLog(3);
+
+		//	printf("\nResolveu modelo\n");	system("pause");
+		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, totalTipos, PiValue);
+		if (error) { printf("\nErro ao obter os valores das variaveis duais\n"); goto QUIT; }
+
+		//printLog(4);
+
+		error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+		if (error) { printf("\nErro ao inserir obter o valor da funcao objetivo - Primeira Iteracao\n"); goto QUIT; }
+
+	//	printf("\nObteve os valores duais\n"); system("pause");
 
 		idColuna = m - 1;
 
-		while (totalTime < timeLimitCG && custo_reduzido_negativo == 1) {
+		if (classe == 9)qtdTiposBin = calloc(totalTipos, sizeof(int));
 
-			auxBin = CriaNovosPadroes(itens, nextStep, ordem, PiValue, quantidade, tamanho, totalTime);
+		nova_m = m;
+
+		int variaveisArredondadas = 0;
+
+		while (custo_reduzido_negativo == 1 && totalTime < timeLimitRMP) {
+
+			//testeIntegridadeColunas(primeiraColuna, ultimaColuna, m);
+
+			auxBin = CriaNovosPadroes(combinacoes[bestCombination][0], itens, heuristicas, ordem, PiValue, quantidade, tamanho, classe, nextStep);
+
+			//printLog(5);
+
+		//	printf("\nCriou novos padroes\n");system("pause");
 
 			custo_reduzido_negativo = 0; //se foi encontrado custo reduzido negativo
 
 			while (auxBin) {
 
-				reducedCost = 1.0; //valor do custo reduzido do padrão atual
+				//printf("\nBin %d\n", auxBin->bin.idt);system("pause");
+
+				reducedCost = 1.0; //valor do custo reduzido do padrï¿½o atual
 
 				auxPack = auxBin->bin.conteudo;
 
-				while (auxPack && reducedCost >= 0.0) { //calcula custo reduzido
+				//printLog(6);
 
-					if (PiValue[auxPack->pack.id] > 0.0) reducedCost = reducedCost - PiValue[auxPack->pack.id];
+				if (classe == 9) {
 
-					auxPack = auxPack->proximo;
+					zeraQtdTiposBin(qtdTiposBin, totalTipos);
+
+					//printLog(7);
+
+					totalTiposBin = 0;
 
 				}
 
-				if (reducedCost < 0.0) { //verifica se o custo reduzido é negativo
+				while (auxPack && reducedCost >= 0.0) { //calcula custo reduzido
+
+					if (classe == 9) {
+
+						k = itens[auxPack->pack.id][5];
+
+						//printLog(8);
+
+						if (qtdTiposBin[k] == 0) totalTiposBin++;
+
+						qtdTiposBin[k] = qtdTiposBin[k] + 1;
+
+						//printLog(9);
+
+					}
+					else {
+
+						k = auxPack->pack.id;
+
+						//printLog(10);
+
+					}
+
+					if (PiValue[k] > 0.0) reducedCost = reducedCost - PiValue[k];
+
+					//printLog(11);
+
+					auxPack = auxPack->proximo;
+
+					//printLog(12);
+				}
+
+				while (auxPack && classe == 9) {
+
+					k = itens[auxPack->pack.id][5];
+
+					//printLog(13);
+
+					if (qtdTiposBin[k] == 0) totalTiposBin++;
+
+					//printLog(14);
+
+					qtdTiposBin[k] = qtdTiposBin[k] + 1;
+
+					//printLog(15);
+
+					auxPack = auxPack->proximo;
+
+					//printLog(16);
+
+				}
+
+				if (reducedCost < 0.0) { //verifica se o custo reduzido ï¿½ negativo
+
+					//printLog(17);
+					//printf("\nCusto-Reduzido Negativo\n", auxBin->bin.idt);	system("pause");
+
+					//testeQtdTiposBin(qtdTiposBin, totalTipos, totalTiposBin, auxBin->bin.conteudo, itens);
 
 					ultimaColuna = insereColuna(auxBin, ultimaColuna, idColuna);
 
-					alocaMemoriaUmaVariavel(&cind, &cval, auxBin);
+					//printLog(18);
 
-					nz = preencheUmaVariavel(cind, cval, auxBin);
+					//printf("\nInseriu coluna\n", auxBin->bin.idt);system("pause");
+
+					if (classe == 9) {
+
+						k = totalTiposBin;
+
+						//printLog(19);
+
+					}
+					else {
+
+						k = auxBin->bin.qtdeItens;
+
+						//printLog(20);
+					}
+
+					alocaMemoriaUmaVariavel(&cind, &cval, k);
+
+					if (classe == 9) {
+
+						//printLog(21);
+
+						nz = preencheUmaVariavelClass9(cind, cval, totalTipos, qtdTiposBin);
+
+						//printLog(22);
+
+						//if (nz != totalTiposBin) { printf("Erro! nz retorno funcao = %d, totaltiposBin %d", nz, totalTiposBin); system("pause"); }
+						//else{printf("\nPassou no teste retorno nz preencheUmaVariavel\n");system("pause");}
+
+					}
+					else {
+
+						//printLog(23);
+
+						nz = preencheUmaVariavel(cind, cval, auxBin);
+
+						//printLog(24);
+					}
 
 					error = GRBaddvar(model, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_CONTINUOUS, NULL);
-					if (error) goto QUIT;
+					if (error) { printf("\nErro ao inserir nova coluna no RMP\n"); goto QUIT; }
 
-					//#######################################################################################################
-					error = GRBaddvar(modelMIP, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_BINARY, NULL);
-					if (error) goto QUIT;
+					//printLog(25);
+					//printf("\nAdicionou coluna ao RMP\n");system("pause");
 
-					m = m + 1; // aumenta uma variável
+
+					if(classe == 9){ error = GRBaddvar(modelMIP, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_INTEGER, NULL); }
+					else{ error = GRBaddvar(modelMIP, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_BINARY, NULL); }
+
+					if (error) { printf("\nErro ao inserir nova coluna no MIP\n"); goto QUIT; }
+
+					//printLog(26);
+					//printf("\nAdicionou coluna ao MIP\n");system("pause");
+
+					nova_m = nova_m + 1; // aumenta uma variï¿½vel
 
 					idColuna++;
 
@@ -3579,157 +4969,347 @@ int main() {
 
 					auxBin = auxBin->proximo;
 
+					//printLog(27);
+
 				}
 				else {
+
+					//printLog(28);
 
 					topoBin = auxBin;
 					auxBin = auxBin->proximo;
 					topoBin->proximo = NULL;
 					freeMemoryBin(topoBin);
 
+					//printLog(29);
+
 				}
 
+				//if (auxBin) { printf("\Vai passar para a proxima Bin\n"); system("pause"); }
+				//else { printf("\Nao ha mais bin\n"); system("pause"); }
 
 			}
 
-			if (custo_reduzido_negativo == 1) {//encontrou-se padrão com custo reduzido negativo
+			if (custo_reduzido_negativo == 0 || actualIteration > NIterations) {
 
+				//printLog(30);
+
+				custo_reduzido_negativo = 0;
+
+		//		printf("\nVai arredondar uma variavel\n"); system("pause");
+
+				if (variaveisArredondadas < (int)ceil(objval)) {
+
+					//printLog(31);
+
+					error = obtemResultado(model, &valorVariaveis, m);
+					if (error) { printf("\nErro ao obter o resultado\n"); goto QUIT; }
+
+					//printLog(32);
+
+					//printf("\nObteve o resultado\n"); system("pause");
+
+					error = fixaUmaVariavel(model, valorVariaveis, m, &custo_reduzido_negativo);
+					if (error) goto QUIT;
+
+					//printLog(33);
+
+					if (custo_reduzido_negativo) variaveisArredondadas++;
+
+					free(valorVariaveis);
+
+				}
+
+			}
+
+			if (custo_reduzido_negativo == 1) {//encontrou-se padrï¿½o com custo reduzido negativo
+
+		//		printf("\nVai otimizar o modelo linear\n"); system("pause");
+
+				//printLog(34);
 
 				error = GRBoptimize(model);
+				if (error) { printf("\nErro ao otimizar o RMP\n"); goto QUIT; }
+
+				//printLog(35);
+
+				error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &status);
 				if (error) goto QUIT;
 
-				GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, quantidade, PiValue);
-				if (error) goto QUIT;
+				//printLog(36);
 
-				//novo código
-				error = obtemResultado(model, &valorVariaveis, m);
-				if (error) goto QUIT;
+				if (status != GRB_OPTIMAL) {
 
-				error = fixaUmaVariavel(model, valorVariaveis, m);
-				if (error) goto QUIT;
-				//novo código
+					fprintf(stderr, "Error: it isn't optimal\n");
+					goto QUIT;
+				}
 
+		//		printf("\Otimizou o modelo\n"); system("pause");
+
+				//printLog(37);
+
+				GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, totalTipos, PiValue);
+				if (error) { printf("\nErro ao obter os valores das variaveis duais (2)\n"); goto QUIT; }
+
+				//printLog(38);
+
+		//		printf("\Obteve o valor dos duais\n"); system("pause");
+
+				//novo cï¿½digo
+
+				error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+				if (error) { printf("\nErro ao inserir obter o valor da funcao objetivo\n"); goto QUIT; }
+
+				//printLog(39);
+
+		//		printf("\Obteve o resultado\n"); system("pause");
+
+
+				m = nova_m;
+
+				if (referenceImprovement - objval >= ZMin) {
+
+					//printLog(40);
+
+					referenceImprovement = objval;
+
+					actualIteration = 0;
+
+					}
+				else {
+
+				//printLog(41);
+
+
+				actualIteration++;
+
+		//		if (actualIteration > NIterations) { printf("\nLimite de Iteracao sem melhoria\n"); system("pause"); }
+
+						}
+		//		printf("\Atualiza iteracao\n"); system("pause");
 
 			}
 
-			totalTime = time(NULL) - tempo;
+			totalTime = time(NULL) - initialTime;
+
+		//	if (totalTime > timeLimitRMP) { printf("\nTempo de execucao esgotado\n"); system("pause"); }
+
+			//printLog(42);
+
 
 		}
 
-		if (verificaSeEhInteiro(model, m)) {
+		m = nova_m;
 
-			error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+		custo_reduzido_negativo = 1;
+
+		tempoUltimaMelhoria = time(NULL) - initialTime;
+
+		teta = 0.75;
+
+		while (custo_reduzido_negativo == 1 && variaveisArredondadas < (int)ceil(objval)) {
+
+			//printLog(43);
+
+			custo_reduzido_negativo = 0;
+
+			error = GRBoptimize(model);
+			if (error) { printf("\nErro ao otimizar o RMP\n"); goto QUIT; }
+
+			//printLog(44);
+
+			error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &status);
 			if (error) goto QUIT;
 
-			error = obtemResultado(model, &valorVariaveis, m);
-			if (error) goto QUIT;
+			//printLog(45);
 
-		}
-		else {
 
-			//#################################################
+			if (status != GRB_OPTIMAL) {
 
-			parcialTime = totalTimeLimit - (time(NULL) - tempo);
-
-			error = GRBsetdblparam(GRBgetenv(modelMIP), GRB_DBL_PAR_TIMELIMIT, (double)parcialTime);
-			if (error) goto QUIT;
-
-			//Optimize model
-
-			error = GRBoptimize(modelMIP);
-			if (error) goto QUIT;
-
-			totalTime = time(NULL) - tempo;
-
-			error = GRBgetintattr(modelMIP, GRB_INT_ATTR_STATUS, &status);
-			if (error) goto QUIT;
-
-			if (status != GRB_OPTIMAL && status != GRB_TIME_LIMIT) {
-
-				fprintf(stderr, "Error: it isn't optimal\n");
-				goto QUIT;
-			}
-
-			error = GRBgetdblattr(modelMIP, GRB_DBL_ATTR_OBJVAL, &objval);
-			if (error) goto QUIT;
-
-			error = obtemResultado(modelMIP, &valorVariaveis, m);
-			if (error) goto QUIT;
-
+			fprintf(stderr, "Error: it isn't optimal\n");
+			goto QUIT;
 		}
 
-		bestIteration = bestOfBest;
+		error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+		if (error) { printf("\nErro ao obter o valor da funcao objetivo\n"); goto QUIT; }
 
-		while (bestIteration) {
+		error = obtemResultado(model, &valorVariaveis, m);
+		if (error) { printf("\nErro ao obter o resultado\n"); goto QUIT; }
 
-			erro = validSoluction(bestIteration->soluction.bins, tamanho, quantidade, bestIteration->soluction.value);
+		//printLog(46);
 
-			if (erro > 0) {
+		error = fixaUmaVariavel(model, valorVariaveis, m, &custo_reduzido_negativo);
+		if (error) goto QUIT;
 
+		//printLog(47);
 
-				printf("\n\tACO solution not recorded! Found %i errors!\n", erro);
+		if (custo_reduzido_negativo) variaveisArredondadas++;
 
-			}
-			else {
+		free(valorVariaveis);
 
-				saveFile(bestIteration->soluction.bins, classe, quantidade, instancia, bestIteration->soluction.value, bestIteration->soluction.time, semente);
-
-			}
-
-			bestIteration = bestIteration->nextBestSoluction;
-
-		}
+	}
 
 
-		salvaSolucao(&columnSoluction, primeiraColuna, valorVariaveis, m, (int)objval, totalTime);
+	//printLog(48);
 
-		excluiItensDuplicados(usedItens, columnSoluction, itens);
+
+	totalTime = time(NULL) - initialTime;
+
+	roudingSoluction = empilharSoluction(roudingSoluction, NULL, 0, (int)ceil(objval), 0.0, totalTime);
+
+	//printLog(49);
+
+	//################################################################################################################
+
+	*/
+
+	totalTime = time(NULL) - initialTime;
+
+	parcialTime = timeLimitMIP - totalTime;
+
+	error = GRBsetdblparam(GRBgetenv(modelMIP), GRB_DBL_PAR_TIMELIMIT, (double)parcialTime);
+	if (error) { printf("\nErro ao configurar o tempo limite MIP\n"); goto QUIT; }
+
+	//printLog(50);
+
+
+	//	printf("\nVai resolver o problema inteiro\n"); system("pause");
+
+	error = GRBoptimize(modelMIP);
+	if (error) { printf("\nErro ao otimizar o MIP\n"); goto QUIT; }
+
+	//printLog(51);
+
+
+	error = GRBgetintattr(modelMIP, GRB_INT_ATTR_STATUS, &status);
+
+	if (status != GRB_OPTIMAL && status != GRB_TIME_LIMIT) {
+
+		fprintf(stderr, "Error: it isn't optimal\n");
+		goto QUIT;
+
+	}
+
+	error = GRBgetdblattr(modelMIP, GRB_DBL_ATTR_OBJVAL, &objval);
+	if (error) { printf("\nErro ao obter o valor da funcao objetivo MIP\n"); goto QUIT; }
+
+	error = obtemResultado(modelMIP, &valorVariaveis, m);
+	if (error) { printf("\nErro ao obter resultado MIP\n"); goto QUIT; }
+
+	//	}
+
+//	printf("\nVai validar solucao\n"); system("pause");
+
+	totalTime = time(NULL) - initialTime;
+
+	//	totalTime = totalTime - roudingSoluction->soluction.time + tempoUltimaMelhoria;
+
+	erro = validSoluction(bestOfBest->soluction.bins, tamanho, quantidade, bestOfBest->soluction.value);
+
+	if (erro > 0) {
+
+		printf("\n\tSolucao ACO nao gravada! Encontrado %i erros!\n", erro);
+
+	}
+	else {
+
+		saveFile(bestOfBest->soluction.bins, classe, quantidade, instancia, bestOfBest->soluction.value, bestOfBest->soluction.time, semente);
+
+	}
+
+	salvaSolucao(&columnSoluction, primeiraColuna, valorVariaveis, m, (int)objval, totalTime);
+
+	free(valorVariaveis);
+
+	if (classe != 9) {
+
+
+		excluiItensDuplicados(columnSoluction, itens, quantidade);
 
 		erro = validSoluction(columnSoluction->soluction.bins, tamanho, quantidade, columnSoluction->soluction.value);
 
-		if (erro > 0) {
 
-			printf("\n\tCG solution not recorded! Found %i errors!\n", erro);
+	}
+	else {
 
-		}else{
-		
-			saveFile(columnSoluction->soluction.bins, classe, quantidade, instancia, columnSoluction->soluction.value, columnSoluction->soluction.time, semente);	
-			
+		erro = validSoluctionClass9(columnSoluction->soluction.bins, tamanho, columnSoluction->soluction.value, totalTipos, qtdTipos, itens);
+
+	}
+
+	if (erro > 0) {
+
+		printf("\n\tSolucao CG com ressalvas! Encontrado %i erros!\n", erro);
+
+	}
+
+	//saveFile(NULL, classe, quantidade, instancia, roudingSoluction->soluction.value, roudingSoluction->soluction.time, semente);
+
+	saveFile(columnSoluction->soluction.bins, classe, quantidade, instancia, columnSoluction->soluction.value, columnSoluction->soluction.time, semente);
+
+	printf("\n\tSolucao criada com sucesso! \n\tResultado registrado no arquivo BPP-0.1.6.csv\n");
+
+	printf("\nFinalizado %d_%d_%d\n", classe, quantidade, instancia);
+
+	printf("\n\n\t++++++++++++++++++++++++++++++++++++++++++++\n");
+
+
+	//#####################################################################################
+
+
+/*	if (classe == 9) {
+
+		for (k = 0; k < totalTipos; k++) {
+
+			free(qtdTipos[k]);
+
 		}
-		
-		printf("\n\tSuccessfully created solutions! \n\tResults recorded in results.csv\n");
 
-		printf("\n\n\t++++++++++++++++++++++++++++++++++++++++++++\n");
+		free(qtdTipos);
 
-		printf("\n\t%d_%d_%d\n", classe, quantidade, instancia);
+	}
 
-		printf("\n\n\tType 1 to solve other problem or 0 to exit!\n\t");
-		scanf("%d", &opcao);
 
-		for (k = 0; k < quantidade; k++) {
+	freeMemorySoluctionAll(columnSoluction);
+
+	freeMemorySoluctionACO(geralSoluction);
+
+	freeProbabilities(topoProbability);
+
+	free(PiValue);
+*/
+	GRBfreemodel(modelMIP);
+
+	/*	for (k = 0; k < quantidade; k++) {
 
 			free(itens[k]);
-			free(nextStep[k]);
 
 		}
+
+		for (k = 0; k < quantidadeOrdens; k++) {
+
+			free(heuristicas[k]);
+
+		}
+
+		for (k = 0; k < quantidadeCombinacoes; k++) {
+
+			free(pheromones[k]);
+
+		}
+
 
 		free(itens);
 		free(ordem);
 		free(bestOrder);
-		free(usedItens);
 		free(nextStep);
-		free(PiValue);
 
-	}
-
-	/* Report the result */
-
+		*/
+		//Free environment
+	GRBfreeenv(env);
 
 QUIT:
 
 	/* Error reporting */
-
-
 
 	if (error) {
 
@@ -3740,14 +5320,7 @@ QUIT:
 		exit(1);
 	}
 
-
-	//Free model
-	GRBfreemodel(model);
-
-	GRBfreemodel(modelMIP);
-
-	//Free environment
-	GRBfreeenv(env);
+	system("pause");
 
 	return 0;
 
