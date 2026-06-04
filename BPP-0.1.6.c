@@ -5,11 +5,12 @@
 #include <time.h>
 #include "gurobi_c.h"
 
-int  timeLimitACO, timeLimitMIP, NIterations, timeLimitRMP;
+int  timeLimitACO, timeLimitMIP;
 int  o, sr;
-float QAnt, evaporation, QIncrease, pheromone, alfa, beta, nZao, QNZao, volume_Total, ZMin;
+float* maiorDimensao, QAnt, evaporation, evaporationC, QIncrease, QIncreaseC, pheromone, alfa, beta, nZao, volume_Total, ZMin;
 int volumeTotal, menorVolume, menorLado;
-float teta;
+int defaultSeeds, defaultTimeLimits;
+
 
 //########################################struct probability#####################################
 
@@ -1126,12 +1127,11 @@ void freeMemorySoluctionAll(NoSoluction* geralSoluction) {
 
 	while (geralSoluction) {
 
-		geralSoluction = aux;
+		aux = geralSoluction;
 
 		geralSoluction = geralSoluction->proximo;
 
 		freeMemorySoluction(aux);
-
 
 	}
 
@@ -1144,12 +1144,11 @@ void freeMemorySoluctionACO(NoSoluction* geralSoluction) {
 
 	while (geralSoluction) {
 
-		geralSoluction = aux;
+		aux = geralSoluction;
 
 		geralSoluction = geralSoluction->proximo;
 
 		free(aux);
-
 
 	}
 
@@ -1252,13 +1251,11 @@ void ordenaValores(float* nextStep, int* ordem, int quantidade) {
 
 	}
 
-
 	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
 
 }
 
 //##############################################################
-//importa a instância do arquivo txt e salva no tabela itens
 
 int retornaMaior(int a, int b, int c) {
 
@@ -1306,7 +1303,15 @@ int retornaMeio(int a, int b, int c) {
 }
 
 
+//importa a instância do arquivo txt e salva no tabela itens
 int importaArquivoClass9(int** itens, float** heuristicas, int classe, int quantidade, int instancia, int tamanho[]) {
+
+	maiorDimensao[0] = 0.0;
+	maiorDimensao[1] = 0.0;
+	maiorDimensao[2] = 0.0;
+	maiorDimensao[3] = 0.0;
+	maiorDimensao[4] = 0.0;
+
 
 	volume_Total = 0.0;
 	volumeTotal = 0;
@@ -1366,14 +1371,24 @@ int importaArquivoClass9(int** itens, float** heuristicas, int classe, int quant
 
 		//volume
 		heuristicas[0][contador] = (float)volume;
+		if (heuristicas[0][contador] > maiorDimensao[0]) maiorDimensao[0] = heuristicas[0][contador];
+
 		heuristicas[1][contador] = (float)retornaMaior(itens[contador][1], itens[contador][2], itens[contador][3]);
+		if (heuristicas[1][contador] > maiorDimensao[1]) maiorDimensao[1] = heuristicas[1][contador];
+
 		heuristicas[2][contador] = (float)retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+		if (heuristicas[2][contador] > maiorDimensao[2]) maiorDimensao[2] = heuristicas[2][contador];
+
 		heuristicas[3][contador] = (float)retornaMenor(itens[contador][1] * itens[contador][2],
 			itens[contador][1] * itens[contador][3],
 			itens[contador][2] * itens[contador][3]);
+		if (heuristicas[3][contador] > maiorDimensao[3]) maiorDimensao[3] = heuristicas[3][contador];
+
+
 		heuristicas[4][contador] = (float)retornaMaior(itens[contador][1] * itens[contador][2],
 			itens[contador][1] * itens[contador][3],
 			itens[contador][2] * itens[contador][3]);
+		if (heuristicas[4][contador] > maiorDimensao[4]) maiorDimensao[4] = heuristicas[4][contador];
 
 		volumeTotal = volumeTotal + volume;
 
@@ -1392,17 +1407,21 @@ int importaArquivoClass9(int** itens, float** heuristicas, int classe, int quant
 
 	fclose(file);
 
-	if (classe > 8) {
-
-		nZao = QNZao * ((float)maiorVolume);
-
-	}
 
 	return totalTipos;
 
 }
 
+//importa a instância do arquivo txt e salva no tabela itens
 void importaArquivo(int** itens, float** heuristicas, int classe, int quantidade, int instancia, int tamanho[]) {
+
+	maiorDimensao[0] = 0.0;
+	maiorDimensao[1] = 0.0;
+	maiorDimensao[2] = 0.0;
+	maiorDimensao[3] = 0.0;
+	maiorDimensao[4] = 0.0;
+
+
 
 	volume_Total = 0.0;
 	volumeTotal = 0;
@@ -1451,11 +1470,19 @@ void importaArquivo(int** itens, float** heuristicas, int classe, int quantidade
 
 		//volume
 		heuristicas[0][contador] = (float)volume;
+		if (heuristicas[0][contador] > maiorDimensao[0]) maiorDimensao[0] = heuristicas[0][contador];
+
 		heuristicas[1][contador] = (float)retornaMaior(itens[contador][1], itens[contador][2], itens[contador][3]);
+		if (heuristicas[1][contador] > maiorDimensao[1]) maiorDimensao[1] = heuristicas[1][contador];
+
 		heuristicas[2][contador] = (float)retornaMenor(itens[contador][1], itens[contador][2], itens[contador][3]);
+		if (heuristicas[2][contador] > maiorDimensao[2]) maiorDimensao[2] = heuristicas[2][contador];
+
 		heuristicas[3][contador] = (float)retornaMenor(itens[contador][1] * itens[contador][2],
 			itens[contador][1] * itens[contador][3],
 			itens[contador][2] * itens[contador][3]);
+		if (heuristicas[3][contador] > maiorDimensao[3]) maiorDimensao[3] = heuristicas[3][contador];
+
 
 		volumeTotal = volumeTotal + volume;
 
@@ -1478,12 +1505,6 @@ void importaArquivo(int** itens, float** heuristicas, int classe, int quantidade
 	}
 
 	fclose(file);
-
-	if (classe > 8) {
-
-		nZao = QNZao * ((float)maiorVolume);
-
-	}
 
 }
 
@@ -2267,7 +2288,7 @@ void deletRepeatedSpaces(NoSpace** spaceXLeft, NoSpace** spaceXDown, NoSpace** s
 }
 
 
-NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[], double* PiValue, int classe) {
+NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[]) {
 
 	int i, x, y, z, id, packed = 0;
 	int idBin;
@@ -2276,7 +2297,6 @@ NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[], double* P
 	NoSpace* aux, * topoSpaceGeral;
 	NoPack* topoPack;
 	NoSpace* spaceXLeft, * spaceXDown, * spaceYDown, * spaceYBack, * spaceZLeft, * spaceZBack, * novoSpace;
-	double valorDual;
 
 	topoBin = NULL;
 	topoSpaceGeral = NULL;
@@ -2355,63 +2375,47 @@ NoBin* binPack(int** itens, int* ordem, int quantidade, int tamanho[], double* P
 
 		if (packed == 0) {
 
-			if (classe == 9) {
+			topoPack = NULL;
 
-				valorDual = PiValue[itens[id][5]];
+			topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
+			topoBin->bin.qtdeItens = 0;
+
+			novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
+
+			if (o == -1) packed = packPackedMahvash(novoSpace, id, itens);
+			else packed = packPacked(novoSpace, id, itens, o + itens[id][4]);
+
+			free(novoSpace);
+			novoSpace = NULL;
+
+			if (packed) {
+
+				definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
+
+				novoSpace = criarSpace(0, 0, pointAxis[2], idBin, tamanho[0], tamanho[1], tamanho[2] - pointAxis[2]);
+				if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+				novoSpace = criarSpace(pointAxis[0], 0, 0, idBin, tamanho[0] - pointAxis[0], tamanho[1], tamanho[2]);
+				if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+				novoSpace = criarSpace(0, pointAxis[1], 0, idBin, tamanho[0], tamanho[1] - pointAxis[1], tamanho[2]);
+				if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
+
+				topoPack = empilharPack((*topoBin).bin.conteudo, id, 0, 0, 0, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
+
+				(*topoBin).bin.conteudo = topoPack;
+				(*topoBin).bin.usedSpace = (*topoBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
+				topoBin->bin.qtdeItens = (*topoBin).bin.qtdeItens + 1;
+
+				idBin++;
 
 			}
 			else {
 
-				valorDual = PiValue[id];
+				printf("\nErro! Item %d nao carregado\n", id);
+				system("pause");
 
 			}
-
-			if (valorDual > 0.0) {
-
-				topoPack = NULL;
-
-				topoBin = empilharBin(topoBin, topoPack, NULL, idBin, 0);
-				topoBin->bin.qtdeItens = 0;
-
-				novoSpace = criarSpace(0, 0, 0, idBin, tamanho[0], tamanho[1], tamanho[2]);
-
-				if (o == -1) packed = packPackedMahvash(novoSpace, id, itens);
-				else packed = packPacked(novoSpace, id, itens, o + itens[id][4]);
-
-				free(novoSpace);
-				novoSpace = NULL;
-
-				if (packed) {
-
-					definePointAxis(pointAxis, packed, itens[id][1], itens[id][2], itens[id][3]);
-
-					novoSpace = criarSpace(0, 0, pointAxis[2], idBin, tamanho[0], tamanho[1], tamanho[2] - pointAxis[2]);
-					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-					novoSpace = criarSpace(pointAxis[0], 0, 0, idBin, tamanho[0] - pointAxis[0], tamanho[1], tamanho[2]);
-					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-					novoSpace = criarSpace(0, pointAxis[1], 0, idBin, tamanho[0], tamanho[1] - pointAxis[1], tamanho[2]);
-					if (novoSpace) empilharSpace(&topoSpaceGeral, topoBin, novoSpace);
-
-					topoPack = empilharPack((*topoBin).bin.conteudo, id, 0, 0, 0, packed, pointAxis[0], pointAxis[1], pointAxis[2]);
-
-					(*topoBin).bin.conteudo = topoPack;
-					(*topoBin).bin.usedSpace = (*topoBin).bin.usedSpace + (itens[id][1] * itens[id][2] * itens[id][3]);
-					topoBin->bin.qtdeItens = (*topoBin).bin.qtdeItens + 1;
-
-					idBin++;
-
-				}
-				else {
-
-					printf("\nItem %d nao carregado\n", id);
-					system("pause");
-
-				}
-
-			}
-
 
 		}
 
@@ -2433,7 +2437,6 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 		tamanho[0] = 100;
 		tamanho[1] = 100;
 		tamanho[2] = 100;
-		nZao = QNZao * 1000000.0;
 
 	}
 	else if (classe == 6) {
@@ -2441,7 +2444,6 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 		tamanho[0] = 10;
 		tamanho[1] = 10;
 		tamanho[2] = 10;
-		nZao = QNZao * 1000.0;
 
 	}
 	else if (classe == 7) {
@@ -2449,7 +2451,6 @@ void tamanhoInstancia(int classe, int tamanho[]) {
 		tamanho[0] = 40;
 		tamanho[1] = 40;
 		tamanho[2] = 40;
-		nZao = QNZao * 42875.0;
 
 	}
 	else if (classe == 10) {
@@ -2471,22 +2472,15 @@ int validSoluctionClass9(NoBin* listaBin, int tam[], int solucao, int totalTipos
 	NoPack* auxPack;
 	NoPack* auxPack1;
 
-	//int volumeTotal;
 
 	while (auxBin) {// percorre todas as bins utilizadas
 
 		totalBin = totalBin + auxBin->bin.idt;
 
-		//volumeTotal = 0;
-
-		//printf("\nBin %d\n", auxBin->bin.idt);
-
 		auxPack = (*auxBin).bin.conteudo;
 
 		while (auxPack) { // percorre todos os elementos da bin
 
-
-			//volumeTotal = volumeTotal + (auxPack->pack.kx * auxPack->pack.ky * auxPack->pack.kz);
 
 			tipo = itens[auxPack->pack.id][5];
 
@@ -2530,8 +2524,6 @@ int validSoluctionClass9(NoBin* listaBin, int tam[], int solucao, int totalTipos
 			auxPack = auxPack->proximo;
 		}
 
-		//printf("\nVolume Total carregado %d\n", volumeTotal);
-
 		auxBin = auxBin->proximo;
 	}
 
@@ -2573,22 +2565,14 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 	NoPack* auxPack;
 	NoPack* auxPack1;
 
-	//int volumeTotal;
-
 	while (auxBin) {// percorre todas as bins utilizadas
 
 		totalBin++;
-
-		//volumeTotal = 0;
-
-		//printf("\nBin %d\n", auxBin->bin.idt);
 
 		auxPack = (*auxBin).bin.conteudo;
 
 		while (auxPack) { // percorre todos os elementos da bin
 
-
-			//volumeTotal = volumeTotal + (auxPack->pack.kx * auxPack->pack.ky * auxPack->pack.kz);
 
 			if (used[auxPack->pack.id] == 0) {
 
@@ -2645,8 +2629,6 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 			auxPack = auxPack->proximo;
 		}
 
-		//printf("\nVolume Total carregado %d\n", volumeTotal);
-
 		auxBin = auxBin->proximo;
 	}
 
@@ -2674,7 +2656,7 @@ int validSoluction(NoBin* listaBin, int tam[], int quantidade, int solucao) {
 
 
 //salva o arquivo com os resultados
-void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int objetivo, int totalTime, unsigned int semente) {
+void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int objetivo, int totalTime, unsigned int semente, int acoMIP) {
 
 	FILE* pont_arqu;
 	NoBin* auxBin = listaBin;
@@ -2688,9 +2670,12 @@ void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int ob
 
 	}
 
-	pont_arqu = fopen("BPP-0.1.6.csv", "a");
+	pont_arqu = fopen(" results.csv", "a");
 
-	fprintf(pont_arqu, "%d;%d;%d;%d;%d;%d;%2f;\n", classe, quantidade, instancia, semente, objetivo, totalTime, wasted);
+	fprintf(pont_arqu, "%d;%d;%d;%d;%d;%d;%2f;", classe, quantidade, instancia, semente, objetivo, totalTime, wasted);
+
+	if (acoMIP == 0) fprintf(pont_arqu, "ACO;\n");
+	else fprintf(pont_arqu, "ACO+ILP;\n");
 
 	/*while (auxBin) {// percorre todas as bins utilizadas
 
@@ -2724,97 +2709,12 @@ void saveFile(NoBin* listaBin, int classe, int quantidade, int instancia, int ob
 
 		auxBin = auxBin->proximo;
 	}
-*/
+	*/
+
 	fclose(pont_arqu);
 
 }
 
-
-/*void defineClassificationType(int **itens, int quantidade, int *nextStep){
-
-	int i;
-
-	for(i=0; i<quantidade; i++){
-
-		if(classification==0){//volume
-
-			nextStep[i] = itens[i][1]*itens[i][2]*itens[i][3];
-
-		}else if(classification==1){//maior lado
-
-			nextStep[i] = retornaMaior(itens[i][1], itens[i][2], itens[i][3]);
-
-		}else if(classification==2){//menor lado
-
-			nextStep[i] = retornaMenor(itens[i][1], itens[i][2], itens[i][3]);
-
-		}else if(classification==3){//maior area
-
-			nextStep[i] = retornaMaior(itens[i][1]*itens[i][2], itens[i][1]*itens[i][3], itens[i][2]*itens[i][3]);
-
-		}else if(classification==4){//menor area
-
-			nextStep[i] = retornaMenor(itens[i][1]*itens[i][2], itens[i][1]*itens[i][3], itens[i][2]*itens[i][3]);
-
-		}else if(classification==5){//menor diferenca de lado
-
-			nextStep[i] = retornaMenor( abs(itens[i][1]-itens[i][2]),
-										abs(itens[i][1]-itens[i][3]),
-										abs(itens[i][2]-itens[i][3]));
-
-		}else if(classification==6){//maior diferenca de lado
-
-			nextStep[i] = retornaMaior( abs(itens[i][1]-itens[i][2]),
-										abs(itens[i][1]-itens[i][3]),
-										abs(itens[i][2]-itens[i][3]));
-
-		}else if(classification==7){//maior diferenca de area
-
-			nextStep[i] = retornaMaior( abs(itens[i][1]*itens[i][2]-itens[i][1]*itens[i][3]),
-										abs(itens[i][1]*itens[i][2]-itens[i][2]*itens[i][3]),
-										abs(itens[i][1]*itens[i][3]-itens[i][2]*itens[i][3]));
-
-		}else{//menor diferenca de area
-
-			nextStep[i] = retornaMenor( abs(itens[i][1]*itens[i][2]-itens[i][1]*itens[i][3]),
-										abs(itens[i][1]*itens[i][2]-itens[i][2]*itens[i][3]),
-										abs(itens[i][1]*itens[i][3]-itens[i][2]*itens[i][3]));
-		}
-
-	}
-
-}
-*/
-
-void printOrdem(int** itens, int* nextStep, int* ordem, int quantidade) {
-
-	int i;
-
-	for (i = 0; i < quantidade; i++) {
-
-		printf("\n%d\t%d\t%d\t%d\t%d", ordem[i], itens[ordem[i]][1], itens[ordem[i]][2], itens[ordem[i]][3], nextStep[ordem[i]]);
-
-	}
-
-}
-
-
-/*void defineOrientationRuleAndSpaceRule(int classe){
-
-	if(classe<9){
-
-		orientationRule = 1;
-		spaceRule = 2;
-
-	}else{
-
-		orientationRule = 6;
-		spaceRule = 7;
-
-	}
-
-}
-*/
 
 void preencheCombinacoes(int** combinacoes, int quantidadeCombinacoes) {
 
@@ -2902,6 +2802,8 @@ void calculaProbabilityCombination(float* probabilityCombination, float totalPro
 
 }
 
+
+
 NoProbability* montaPilhaProbabilidade(int quantidade, float** pheromones, float** heuristicas, int quantidadeCombinacoes, int quantidadeOrdens) {
 
 	NoProbability* aux = NULL;
@@ -2919,8 +2821,7 @@ NoProbability* montaPilhaProbabilidade(int quantidade, float** pheromones, float
 
 		for (k = 0; k < quantidadeOrdens; k++) {
 
-			if (k == 0) { heuristicas[k][i] = (float)pow((double)(heuristicas[k][i] / nZao), (double)beta); }
-			else { heuristicas[k][i] = (float)pow((double)(heuristicas[k][i]), (double)beta); }
+			heuristicas[k][i] = (float)pow((double)(heuristicas[k][i] * nZao / maiorDimensao[k]), (double)beta);
 
 		}
 
@@ -3030,15 +2931,15 @@ int updateProbabilityCombination(float* probabilityCombination, float totalProba
 
 	for (i = 0; i < quantidadeCombinacoes; i++) {
 
-		probabilityCombination[i] = probabilityCombination[i] * totalProbabilityCombination * ((float)1.0 - evaporation);
+		probabilityCombination[i] = probabilityCombination[i] * totalProbabilityCombination * ((float)1.0 - evaporationC);
 
 		newTotalProbabilityCombination = newTotalProbabilityCombination + probabilityCombination[i];
 
 	}
 
-	probabilityCombination[bestCombination] = probabilityCombination[bestCombination] + (increaseValue / totalProbabilityCombination);
+	probabilityCombination[bestCombination] = probabilityCombination[bestCombination] + (increaseValue * QIncreaseC);
 
-	newTotalProbabilityCombination = newTotalProbabilityCombination + (increaseValue / totalProbabilityCombination);
+	newTotalProbabilityCombination = newTotalProbabilityCombination + (increaseValue * QIncreaseC);
 
 	for (i = 0; i < quantidadeCombinacoes; i++) {
 
@@ -3055,25 +2956,51 @@ int updateProbabilityCombination(float* probabilityCombination, float totalProba
 void printParams() {
 
 	printf("\n\tValores dos parametros");
-	printf("\n\tQAnt\t\t\t %f", QAnt);
-	printf("\n\tAlpha value\t\t %f", alfa);
-	printf("\n\tBeta value\t\t %f", beta);
-	printf("\n\tEvaporation proportion\t %f", evaporation);
-	printf("\n\tAddition proportion\t %f", QIncrease);
-	printf("\n\tPheromone value\t\t %f", pheromone);
-	printf("\n\tQNZao\t\t\t %f", QNZao);
-	printf("\n\tNumber of iterations\t\t\t %d", NIterations);
-	printf("\n\tPercentage of Improvement\t\t\t %f", ZMin);
-	printf("\n\tTeta\t\t\t %f", teta);
-	printf("\n\tACO time limit\t\t %d", timeLimitACO);
-	printf("\n\tRMP time limit\t\t %d", timeLimitRMP);
-	printf("\n\tMIP time limit\t\t %d", timeLimitMIP);
+	printf("\n\tQAnt\t\t\t\t %f", QAnt);
+	printf("\n\tAlpha value\t\t\t %f", alfa);
+	printf("\n\tBeta value\t\t\t %f", beta);
+	printf("\n\tItems order Evaporation\t\t %f", evaporation);
+	printf("\n\tCombination Evaporation\t\t %f", evaporationC);
+	printf("\n\tOrder Item Addition proportion\t %f", QIncrease);
+	printf("\n\tCombination Addition proportion\t %f", QIncrease);
+	printf("\n\tPheromone value\t\t\t %f", pheromone);
+	printf("\n\tnZao\t\t\t\t %f", nZao);
+	printf("\n\tPercentage of Improvement\t %f", ZMin);
+	if (defaultTimeLimits != 0) {
+
+		printf("\n\tACO time limit\t\t %d", timeLimitACO);
+		printf("\n\tMIP time limit\t\t %d", timeLimitMIP);
+
+	}
+	else {
+		printf("\n\tUsing default time limits");
+	}
+
+	if (defaultSeeds == 0) {
+
+		printf("\n\tUsing default seeds");
+
+	}
+	else if(defaultSeeds  == 1) {
+
+		printf("\n\tUsing randomly seeds");
+
+	}
+	else {
+
+		printf("\n\tUsing manual seeds");
+
+	}
+
+	printf("\n");
 
 }
 
 void obtemValoresParametros() {
 
-	int opcao = 14;
+	system("cls");
+
+	int opcao = 15;
 
 	while (opcao > 0) {
 
@@ -3082,17 +3009,27 @@ void obtemValoresParametros() {
 		printf("\t1 - To change QAnt.\n");
 		printf("\t2 - To change Alpha.\n");
 		printf("\t3 - To change Beta.\n");
-		printf("\t4 - To change evaporation proportion.\n");
-		printf("\t5 - To change addition proportion.\n");
-		printf("\t6 - To change pheromone value.\n");
-		printf("\t7 - To change QNZao.\n");
-		printf("\t8 - To change Number of Iterations.\n");
-		printf("\t9 - To change Percentage of Improvement.\n");
-		printf("\t10 - To change Teta.\n");
-		printf("\t11 - To change ACO time limit.\n");
-		printf("\t12 - To change RMP Time Limit.\n");
-		printf("\t13 - To change Total Limit.\n");
+		printf("\t4 - To change order items pheromones evaporation.\n");
+		printf("\t5 - To change combination pheromones evaporation.\n");
+		printf("\t6 - To change order items addition proportion.\n");
+		printf("\t7 - To change combination addition proportion.\n");
+		printf("\t8 - To change pheromone value.\n");
+		printf("\t9 - To change nZao.\n");
+		printf("\t10 - To change Percentage of Improvement.\n");
+		if (defaultTimeLimits != 0) {
+
+			printf("\t11 - To change ACO time limit.\n");
+			printf("\t12 - To change Total Limit.\n");
+
+
+		}
+
+		printf("\t13 - To change seed settings.\n");
+		printf("\t14 - To change Time Limit settings.\n");
+
+
 		scanf("%d", &opcao);
+
 
 		system("cls");
 
@@ -3116,54 +3053,67 @@ void obtemValoresParametros() {
 			break;
 
 		case 4:
-			printf("\n\tType Evaporation proportion (Ex: 0.05)\n\t");
+			printf("\n\tType  order items pheromones evaporation (Ex: 0.05)\n\t");
 			scanf("%f", &evaporation);
 			break;
 
 		case 5:
-			printf("\n\tType addition proportion (Ex: 0.05)\n\t");
-			scanf("%f", &QIncrease);
+			printf("\n\tType combination pheromones evaporation (Ex: 0.05)\n\t");
+			scanf("%f", &evaporationC);
 			break;
 
 		case 6:
+			printf("\n\tType order items addition proportion (Ex: 0.05)\n\t");
+			scanf("%f", &QIncrease);
+			break;
+
+		case 7:
+			printf("\n\tType combination addition proportion (Ex: 0.05)\n\t");
+			scanf("%f", &QIncreaseC);
+			break;
+
+		case 8:
 			printf("\n\tType pheromone value (Ex: 1.0)\n\t");
 			scanf("%f", &pheromone);
 			break;
 
-		case 7:
-			printf("\n\tType QNZao value (Ex: 0.5)\n\t");
-			scanf("%f", &QNZao);
-			break;
-
-		case 8:
-			printf("\n\tType Number of Iterations (Ex: 20)\n\t");
-			scanf("%d", &NIterations);
-			break;
-
 		case 9:
+			printf("\n\tType nZao value (Ex: 0.5)\n\t");
+			scanf("%f", &nZao);
+			break;
+
+		case 10:
 			printf("\n\tType Percentage of Improvement (Ex: 0.2)\n\t");
 			scanf("%f", &ZMin);
 			break;
 
-		case 10:
-			printf("\n\tType Teta (Ex: 0.75)\n\t");
-			scanf("%f", &teta);
-			break;
 
 		case 11:
-			printf("\n\tType ACO time limit in seconds(Ex: 10)\n\t");
-			scanf("%d", &timeLimitACO);
+			if (defaultTimeLimits == 0) { printf("\n\tUsing default time limit.\n\t"); }
+			else {
+				printf("\n\tType ACO time limit in seconds(Ex: 10)\n\t");
+				scanf("%d", &timeLimitACO);
+			}
 			break;
 
 		case 12:
-			printf("\n\tType RMP time limit in seconds(Ex: 10)\n\t");
-			scanf("%d", &timeLimitRMP);
+			if (defaultTimeLimits == 0) { printf("\n\tUsing default time limit.\n\t"); }
+			else {
+				printf("\n\tType RMP (CG) time limit in seconds (Ex: 10)\n\t");
+				scanf("%d", &timeLimitMIP);
+			}
 			break;
 
 		case 13:
-			printf("\n\tType RMP (CG) time limit in seconds (Ex: 10)\n\t");
-			scanf("%d", &timeLimitMIP);
+			printf("\n\tType 0 to defaul seeds, 1 to randomly seeds and 2 to choice seed\n\t");
+			scanf("%d", &defaultSeeds);
 			break;
+
+		case 14:
+			printf("\n\tType 0 to defaul time limit and 1 enable change time limits\n\t");
+			scanf("%d", &defaultTimeLimits);
+			break;
+		
 		default:
 			printf("\nPlease type a valid option\n");
 			break;
@@ -3182,20 +3132,22 @@ void importaParametros() {
 
 	FILE* file;
 	file = fopen("parametros-BPP-0-0-3.txt", "r");
+	int temp;
 
 	fscanf(file, "%f", &QAnt);
 	fscanf(file, "%f", &alfa);
 	fscanf(file, "%f", &beta);
 	fscanf(file, "%f", &evaporation);
+	fscanf(file, "%f", &evaporationC);
 	fscanf(file, "%f", &QIncrease);
+	fscanf(file, "%f", &QIncreaseC);
 	fscanf(file, "%f", &pheromone);
-	fscanf(file, "%f", &QNZao);
-	fscanf(file, "%d", &NIterations);
+	fscanf(file, "%f", &nZao);
 	fscanf(file, "%f", &ZMin);
-	fscanf(file, "%f", &teta);
 	fscanf(file, "%d", &timeLimitACO);
-	fscanf(file, "%d", &timeLimitRMP);
 	fscanf(file, "%d", &timeLimitMIP);
+	fscanf(file, "%d", &defaultSeeds);
+	fscanf(file, "%d", &defaultTimeLimits);
 
 	fclose(file);
 
@@ -3208,7 +3160,7 @@ void updateParams() {
 
 	pont_arqu = fopen("parametros-BPP-0-0-3.txt", "w");
 
-	fprintf(pont_arqu, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d\t%f\t%f\t%d\t%d\t%d\n", QAnt, alfa, beta, evaporation, QIncrease, pheromone, QNZao, NIterations, ZMin, teta, timeLimitACO, timeLimitRMP, timeLimitMIP);
+	fprintf(pont_arqu, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\n", QAnt, alfa, beta, evaporation, evaporationC, QIncrease, QIncreaseC, pheromone, nZao, ZMin, timeLimitACO, timeLimitMIP, defaultSeeds, defaultTimeLimits);
 
 	fclose(pont_arqu);
 
@@ -3221,17 +3173,15 @@ void updateParams() {
 
 //###################################### procedimentos MIP #####################################################
 
-void alocaMemoriaRestricao(double** rhs, char** sense, char** senseMIP, int n) {
+void alocaMemoriaRestricao(double** rhs, char** sense, int n) {
 
 	*rhs = (double*)malloc(n * sizeof(double)); //reserva memória para o lado direito da restrição (double)
 
-	//*sense = (char*)malloc(n * sizeof(char)); //reserva memória para o sinal das restrições (char)
-
-	*senseMIP = (char*)malloc(n * sizeof(char)); //reserva memória para o sinal das restrições (char)
+	*sense = (char*)malloc(n * sizeof(char)); //reserva memória para o sinal das restrições (char)
 
 }
 
-void criaRestricoesClass9(double* rhs, char* sense, char* senseMIP, int n, int* qtdTipos) {
+void criaRestricoesClass9(double* rhs, char* sense, int n, int* qtdTipos) {
 
 	int i;
 
@@ -3239,15 +3189,13 @@ void criaRestricoesClass9(double* rhs, char* sense, char* senseMIP, int n, int* 
 
 		rhs[i] = qtdTipos[i]; //armazena o lado direito da restrição
 
-		//sense[i] = GRB_GREATER_EQUAL; //armazena o sinal da restri��o
-
-		senseMIP[i] = GRB_GREATER_EQUAL;
+		sense[i] = GRB_GREATER_EQUAL;
 
 	}
 
 }
 
-void criaRestricoes(double* rhs, char* sense, char* senseMIP, int n) {
+void criaRestricoes(double* rhs, char* sense, int n) {
 
 	int i;
 
@@ -3255,15 +3203,13 @@ void criaRestricoes(double* rhs, char* sense, char* senseMIP, int n) {
 
 		rhs[i] = 1.0; //armazena o lado direito da restrição
 
-		//sense[i] = GRB_GREATER_EQUAL; //armazena o sinal da restri��o
-
-		senseMIP[i] = GRB_GREATER_EQUAL;
+		sense[i] = GRB_GREATER_EQUAL;
 
 	}
 
 }
 
-void alocaMemoriaVariaveis(double** cMIPStart, int** cbeg, int** clen, int** cind, double** cval, double** lb, double** obj, char** ctype, char** ctypeMIP, int m, int nz) {
+void alocaMemoriaVariaveis(double** cMIPStart, int** cbeg, int** clen, int** cind, double** cval, double** lb, double** obj, char** ctype, int m, int nz) {
 
 	*cbeg = (int*)malloc(m * sizeof(int)); //armazena a quantidade de variáveis (inteiro)
 
@@ -3277,15 +3223,13 @@ void alocaMemoriaVariaveis(double** cMIPStart, int** cbeg, int** clen, int** cin
 
 	*obj = (double*)malloc(m * sizeof(double)); //armazena o multiplicador das variáveis na função objetivo (double)
 
-	//*ctype = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
-
-	*ctypeMIP = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
+	*ctype = (char*)malloc(m * sizeof(char)); //armazena o tipo de variaval (Integer, Binary, Continuous)
 
 	*cMIPStart = (double*)calloc(m, sizeof(double));
 
 }
 
-void preencheVariaveisClass9(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, char* ctypeMIP, int quantidade, int** itens, int totalTipo) {
+void preencheVariaveisClass9(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, int quantidade, int** itens, int totalTipo) {
 
 	int* usedItens = malloc(totalTipo * sizeof(int));
 
@@ -3381,9 +3325,7 @@ void preencheVariaveisClass9(double* cMIPStart, NoBin** ultimaColuna, NoSoluctio
 
 			}
 
-			//ctype[i] = GRB_CONTINUOUS;
-
-			ctypeMIP[i] = GRB_INTEGER;
+			ctype[i] = GRB_INTEGER;
 
 			clen[i] = nz - cbeg[i];
 
@@ -3420,7 +3362,7 @@ void preencheVariaveisClass9(double* cMIPStart, NoBin** ultimaColuna, NoSoluctio
 }
 
 
-void preencheVariaveis(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, char* ctypeMIP, int quantidade) {
+void preencheVariaveis(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* soluctions, int* cbeg, int* cind, double* cval, int* clen, char* ctype, int quantidade) {
 
 	int nz = 0, i = 0;
 
@@ -3488,9 +3430,7 @@ void preencheVariaveis(double* cMIPStart, NoBin** ultimaColuna, NoSoluction* sol
 
 			}
 
-			ctypeMIP[i] = GRB_BINARY;
-
-			//ctype[i] = GRB_CONTINUOUS;
+			ctype[i] = GRB_BINARY;
 
 			clen[i] = nz - cbeg[i];
 
@@ -3585,7 +3525,7 @@ int retornaQuantidadeNaoZerosSoluction(NoSoluction* soluction, int totalTipo, in
 	return nz;
 }
 
-int montaModeloClass9(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int* m, int totalTipo, int* qtdTipos, int** itens) {
+int montaModeloClass9(GRBenv* env, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int* m, int totalTipo, int* qtdTipos, int** itens) {
 
 	int error = 0;
 	int nz = 0;
@@ -3596,20 +3536,17 @@ int montaModeloClass9(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin*
 	double* cval = NULL;//indica o multiplicador da variavel na restrição
 	double* rhs = NULL; //lado direito da restrição
 	char* sense = NULL; // sinal da restrição
-	char* senseMIP = NULL;
 	double* lb = NULL; //lower bound das variáveis
 	double* obj = NULL; //armazena os valores da função objetivo
 	char* ctype = NULL; //tipo da vari�vel
-	char* ctypeMIP = NULL; //tipo da variável
 	double* cMIPStart = NULL;
 
 	NoSoluction* auxSoluction = geralSoluction;
 	NoBin* topoBin = NULL;
 
-	alocaMemoriaRestricao(&rhs, &sense, &senseMIP, n);
+	alocaMemoriaRestricao(&rhs, &sense, n);
 
-
-	criaRestricoesClass9(rhs, sense, senseMIP, n, qtdTipos);
+	criaRestricoesClass9(rhs, sense, n, qtdTipos);
 
 	while (auxSoluction) {
 
@@ -3621,24 +3558,19 @@ int montaModeloClass9(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin*
 
 	}
 
-	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, &ctypeMIP, *m, nz);
+
+	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, *m, nz);
 
 	criaFuncaoObjetivo(lb, obj, *m);
 
-	preencheVariaveisClass9(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, ctypeMIP, *m, itens, totalTipo);
+	preencheVariaveisClass9(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, *m, itens, totalTipo);
 
-	/*error = GRBloadmodel(env, model, "RMP", *m, n,
+
+	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
 		GRB_MINIMIZE, 0.0, obj, sense, rhs,
 		cbeg, clen, cind, cval, lb, NULL,
 		ctype, NULL, NULL);
-	if (error) {printf("\nErro ao montar o modelo RMP (2)\n");  return error;}
-	*/
-	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
-		GRB_MINIMIZE, 0.0, obj, senseMIP, rhs,
-		cbeg, clen, cind, cval, lb, NULL,
-		ctypeMIP, NULL, NULL);
 	if (error) { printf("\nErro ao montar o modelo MIP (2)\n");   return error; }
-
 
 	error = GRBsetdblattrarray(*modelMIP, "Start", 0, *m, cMIPStart);
 	if (error) { printf("\nErro ao cadastrar o MIP Start (2)\n");   return error; }
@@ -3647,7 +3579,7 @@ int montaModeloClass9(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin*
 
 }
 
-int montaModelo(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int quantidade, int* m) {
+int montaModelo(GRBenv* env, GRBmodel** modelMIP, NoBin** ultimaColuna, NoSoluction* geralSoluction, int quantidade, int* m) {
 
 	int error = 0;
 	int nz = 0;
@@ -3658,19 +3590,17 @@ int montaModelo(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ulti
 	double* cval = NULL;//indica o multiplicador da variavel na restrição
 	double* rhs = NULL; //lado direito da restrição
 	char* sense = NULL; // sinal da restrição
-	char* senseMIP = NULL;
 	double* lb = NULL; //lower bound das variáveis
 	double* obj = NULL; //armazena os valores da função objetivo
 	char* ctype = NULL; //tipo da vari�vel
-	char* ctypeMIP = NULL; //tipo da variável
 	double* cMIPStart = NULL;
 
 	NoSoluction* auxSoluction = geralSoluction;
 	NoBin* topoBin = NULL;
 
-	alocaMemoriaRestricao(&rhs, &sense, &senseMIP, n);
+	alocaMemoriaRestricao(&rhs, &sense, n);
 
-	criaRestricoes(rhs, sense, senseMIP, n);
+	criaRestricoes(rhs, sense, n);
 
 	while (auxSoluction) {
 
@@ -3682,22 +3612,16 @@ int montaModelo(GRBenv* env, GRBmodel** model, GRBmodel** modelMIP, NoBin** ulti
 
 	}
 
-	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, &ctypeMIP, *m, nz);
+	alocaMemoriaVariaveis(&cMIPStart, &cbeg, &clen, &cind, &cval, &lb, &obj, &ctype, *m, nz);
 
 	criaFuncaoObjetivo(lb, obj, *m);
 
-	preencheVariaveis(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, ctypeMIP, *m);
+	preencheVariaveis(cMIPStart, ultimaColuna, geralSoluction, cbeg, cind, cval, clen, ctype, *m);
 
-	/*error = GRBloadmodel(env, model, "RMP", *m, n,
+	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
 		GRB_MINIMIZE, 0.0, obj, sense, rhs,
 		cbeg, clen, cind, cval, lb, NULL,
 		ctype, NULL, NULL);
-	if (error) { printf("\nErro ao montar o modelo RMP (1)\n");  return error; }
-	*/
-	error = GRBloadmodel(env, modelMIP, "MIP", *m, n,
-		GRB_MINIMIZE, 0.0, obj, senseMIP, rhs,
-		cbeg, clen, cind, cval, lb, NULL,
-		ctypeMIP, NULL, NULL);
 	if (error) { printf("\nErro ao montar o modelo MIP (1)\n");   return error; }
 
 	error = GRBsetdblattrarray(*modelMIP, "Start", 0, *m, cMIPStart);
@@ -3870,385 +3794,6 @@ void  valoresIniciaisDeOrdem(int** itens, double* PiValue, float* nextStep, int*
 
 }
 
-/*
-void testeOrdenamento(int* ordem, float* nextStep, int quantidade) {
-
-	int i;
-	float anterior = nextStep[ordem[0]];
-
-	for (i = 0; i < quantidade; i++) {
-
-		if (nextStep[ordem[i]] > anterior) {
-
-			printf("\nErro no ordenamento! Atual %f, maior que anterior %f\n");
-
-			system("pause");
-
-		}
-
-		anterior = nextStep[ordem[i]];
-
-	}
-
-	printf("\nPassou no teste Ordenamento\n");
-
-	system("pause");
-
-}*/
-
-
-NoBin* CriaNovosPadroes(int combinacao, int** itens, float** heuristicas, int* ordem, double* PiValue, int quantidade, int tamanho[], int classe, float* nextStep) {
-
-	NoBin* auxBin = NULL, * auxBin1 = NULL;
-	NoBin* topoBin = NULL;
-	int k, l = 0;
-
-	valoresIniciaisDeOrdem(itens, PiValue, nextStep, ordem, quantidade, classe);
-
-	//printf("\nAtribui valores iniciais de ordem\n");
-	//system("pause");
-
-	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
-
-	//printf("\nOrdenou itens\n");
-	//system("pause");
-
-//	for (k = 0; k < 4; k++) {
-
-		//printf("\nDefinido o\n");
-		//system("pause");
-
-//		o = combinacoes[k][1];
-
-		//printf("\nDefinido o\n");
-		//system("pause");
-
-//		sr = combinacoes[k][2];
-
-		//printf("\nDefinido sr\n");
-		//system("pause");
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
-
-	//printf("\nSolucao com combinacao %i\n", k);
-	//system("pause");
-
-//		auxBin1 = auxBin;
-
-//		while (auxBin1->proximo) {
-
-//			auxBin1 = auxBin1->proximo;
-
-//		}
-
-//		auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	//	}
-
-		//printf("\nCriou padrao combinado apenas com dual\n");
-		//system("pause");
-
-	//	while (l < 10) {
-
-	valoresIniciaisDeOrdemCombinado(itens, PiValue, nextStep, ordem, quantidade, classe, heuristicas[combinacao]);
-
-	quicksortDecrease(0, quantidade - 1, nextStep, ordem);
-
-	//		for (k = 0; k < 4; k++) {
-
-	//			o = combinacoes[k][1];
-
-	//			sr = combinacoes[k][2];
-
-	auxBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
-
-	auxBin1 = auxBin;
-
-	while (auxBin1->proximo) {
-
-		auxBin1 = auxBin1->proximo;
-
-	}
-
-	auxBin1->proximo = topoBin;
-	topoBin = auxBin;
-
-	//		}
-
-	//		l = l + 2;
-	//	}
-
-
-	//	printf("\nCriou padrao combinado dual e heuristica\n");
-	//	system("pause");
-
-	return topoBin;
-
-}
-
-void alocaMemoriaUmaVariavel(int** cind, double** cval, int quantidade) {
-
-	*cind = (int*)malloc(quantidade * sizeof(int)); //armazena os �ndices da restri��o (inteiro)
-
-	*cval = (double*)malloc(quantidade * sizeof(double)); //armazena os valores dos multiplicadores das vari�veis (double)
-
-}
-
-void zeraQtdTiposBin(int* qtdTiposBin, int totalTipos) {
-
-	int j;
-
-	for (j = 0; j < totalTipos; j++) {
-
-		qtdTiposBin[j] = 0;
-
-	}
-
-}
-
-int preencheUmaVariavel(int* cind, double* cval, NoBin* auxBin) {
-
-	int nz = 0;
-
-	NoPack* auxPack = auxBin->bin.conteudo;
-
-	while (auxPack) {
-
-		cind[nz] = auxPack->pack.id;
-
-		cval[nz] = 1.0;
-
-		nz++;
-
-		auxPack = auxPack->proximo;
-	}
-
-	return nz;
-
-}
-
-int preencheUmaVariavelClass9(int* cind, double* cval, int qtdTipos, int* totalTiposNoBin) {
-
-	int nz = 0, k;
-
-	for (k = 0; k < qtdTipos; k++) {
-
-		if (totalTiposNoBin[k] > 0) {
-
-			cind[nz] = k;
-
-			cval[nz] = totalTiposNoBin[k];
-
-			nz++;
-		}
-
-	}
-
-	return nz;
-}
-
-
-NoBin* insereColuna(NoBin* colunaAInserir, NoBin* ultimaColunaInserida, int idColuna) {
-
-	colunaAInserir->bin.idtColuna = idColuna;
-	colunaAInserir->proximoColuna = NULL;
-	ultimaColunaInserida->proximoColuna = colunaAInserir;
-	ultimaColunaInserida = colunaAInserir;
-
-	return ultimaColunaInserida;
-
-
-}
-
-
-
-int fixaUmaVariavel(GRBmodel* model, double* valorVariaveis, int m, int* custo_reduzido_negativo) {
-
-	int k, id = -1, error = 0, arredondado = 0;
-	double maiorValor = 0.0, fractionalPart, integerPart;
-
-	for (k = 0; k < m; k++) {
-
-		if (valorVariaveis[k] > 0.0 && floor(valorVariaveis[k]) < ceil(valorVariaveis[k])) {
-
-			fractionalPart = modf(valorVariaveis[k], &integerPart);
-
-			if (fractionalPart >= teta) {
-
-				error = GRBsetdblattrelement(model, GRB_DBL_ATTR_LB, k, integerPart + 1.0);
-				if (error) { printf("\nErro ao atribuir Lower Bound a variavel(1)\n"); return error; }
-
-				if (arredondado == 0) {
-					*custo_reduzido_negativo = 1;
-					arredondado = 1;
-				}
-
-			}
-			else if (arredondado == 0 && maiorValor < fractionalPart) {
-
-				id = k;
-				maiorValor = fractionalPart;
-
-			}
-
-		}
-
-	}
-
-	if (id > -1 && arredondado == 0) {
-
-
-		fractionalPart = modf(valorVariaveis[id], &integerPart);
-
-		*custo_reduzido_negativo = 1;
-		error = GRBsetdblattrelement(model, GRB_DBL_ATTR_LB, id, integerPart + 1.0);
-
-		//printf("\n\nArredondada variavel %lf para %lf\n", valorVariaveis[id], integerPart + 1.0);
-
-	}
-
-	if (error) printf("\nErro ao atribuir Lower Bound a variavel(2)\n");
-
-	return error;
-
-}
-
-
-int verificaSeEhInteiro(GRBmodel* model, int m) {
-
-	int i;
-
-	double* values = (double*)malloc(m * sizeof(double));
-
-	GRBgetdblattrarray(model, "X", 0, m, values);
-
-	for (i = 0; i < m; i++) {
-
-		if (values[i] != 0.0 && values[i] != 1.0) {
-
-			return 0;
-
-		}
-
-	}
-
-	free(values);
-
-	return 1;
-
-}
-
-//##################################### testes RMP ################################################
-/*
-void testeIntegridadeColunas(NoBin* primeiraColuna, NoBin* ultimaColuna, int m) {
-
-	int i=0;
-	NoBin* auxBin = primeiraColuna, *binAnterior = primeiraColuna;
-
-	while (auxBin) {
-
-		i++;
-
-		if (i > m) {
-
-			printf("\nErro! Variavel m: %d, bin atual: %d\n", m, i);
-			system("pause");
-
-		}
-
-		binAnterior = auxBin;
-
-		auxBin = auxBin->proximoColuna;
-	}
-
-	if(i<m) {
-
-		printf("\nErro! Variavel m: %d, bin atual: %d\n", m, i);
-		system("pause");
-
-	}
-
-	if(ultimaColuna != binAnterior) {
-
-		printf("\nErro! Ultima Coluna: %p, ultima Bin: %p\n", ultimaColuna, binAnterior);
-		system("pause");
-
-	}
-
-	printf("\nPassou no teste Integridade Colunas\n");
-
-	system("pause");
-
-}
-
-void testeQtdTiposBin(int* qtdTiposBin, int totalTipos, int totalTiposBin, NoPack* topoPack, int **itens) {
-
-	NoPack* auxPack = topoPack;
-
-	int* referencia = calloc(totalTipos, sizeof(int));
-
-	int nz = 0;
-
-	while (auxPack) {
-
-		if (referencia[itens[auxPack->pack.id][5]] == 0) nz++;
-
-		referencia[itens[auxPack->pack.id][5]] = referencia[itens[auxPack->pack.id][5]] + 1;
-
-		if (referencia[itens[auxPack->pack.id][5]] > qtdTiposBin[itens[auxPack->pack.id][5]]) {
-
-			printf("\nErro! Referencia: %d, qtdTiposBin: %d\n", referencia[itens[auxPack->pack.id][5]], qtdTiposBin[itens[auxPack->pack.id][5]]);
-			system("pause");
-
-		}
-
-		auxPack = auxPack->proximo;
-
-	}
-
-	if (nz != totalTiposBin) {
-
-		printf("\nErro! nz: %d, totalTiposBin: %d\n", nz, totalTiposBin);
-		system("pause");
-
-	}
-
-	for (nz = 0; nz < totalTipos; nz++) {
-
-		if (referencia[nz] != qtdTiposBin[nz]) {
-
-			printf("\nErro! tipo %: referencia %d, qtdTiposBin: %d\n", nz, referencia[nz], qtdTiposBin[nz]);
-			system("pause");
-
-		}
-
-	}
-
-
-	free(referencia);
-
-	printf("\nPassou no teste Quantidade Tipos na Bin\n");
-
-	system("pause");
-
-}
-*/
-
-void printLog(int passo) {
-
-	FILE* pont_arqu;
-
-	pont_arqu = fopen("log.txt", "a");
-
-	fprintf(pont_arqu, " %d", passo);
-
-	if (passo == 42) fprintf(pont_arqu, "\n");
-
-	fclose(pont_arqu);
-
-}
-
 int defineSeed(int classe, int quantidade, int instancia) {
 
 	int semente = 0, total, contador, classeAtual, quantidadeAtual, instanciaAtual, temp;
@@ -4318,7 +3863,7 @@ int defineSeed(int classe, int quantidade, int instancia) {
 
 void defineSettings(int classe, int quantidade) {
 
-	int actualACOTimeLimit = 0, actualRMPTimeLimit = 0, actualMIPTimeLimit = 0, total, contador, classeAtual, quantidadeAtual, temp;
+	int actualACOTimeLimit = 0, actualMIPTimeLimit = 0, total, contador, classeAtual, quantidadeAtual, temp;
 
 	char texto[30];
 
@@ -4337,7 +3882,6 @@ void defineSettings(int classe, int quantidade) {
 			fscanf(file, "%i", &classeAtual);
 			fscanf(file, "%i", &quantidadeAtual);
 			fscanf(file, "%i", &temp);
-			fscanf(file, "%i", &actualRMPTimeLimit);
 			fscanf(file, "%i", &actualMIPTimeLimit);
 
 			if (quantidadeAtual == quantidade && classeAtual == classe) {
@@ -4362,7 +3906,6 @@ void defineSettings(int classe, int quantidade) {
 
 			fscanf(file, "%i", &quantidadeAtual);
 			fscanf(file, "%i", &temp);
-			fscanf(file, "%i", &actualRMPTimeLimit);
 			fscanf(file, "%i", &actualMIPTimeLimit);
 
 			if (quantidadeAtual == classe || quantidadeAtual == quantidade) {
@@ -4387,7 +3930,6 @@ void defineSettings(int classe, int quantidade) {
 	else {
 
 		timeLimitACO = actualACOTimeLimit;
-		timeLimitRMP = actualRMPTimeLimit;
 		timeLimitMIP = actualMIPTimeLimit;
 
 	}
@@ -4439,12 +3981,14 @@ void defineQAnt(int quantidade) {
 
 }
 
+
 int main() {
 
 	//#####################variaveis gerais#############################################
 
-	int opcao, tamanho[3], classe = 0, quantidade, instancia, totalTime, initialTime, tempoUltimaMelhoria, espera;
-	unsigned int semente = (unsigned)time(NULL);
+
+	int opcao = 2, tamanho[3], classe = 0, quantidade, instancia, totalTime, initialTime, tempoUltimaMelhoria, espera;
+	unsigned int semente;
 	int** itens;
 	int k;
 	int continuousLowerBound;
@@ -4456,33 +4000,28 @@ int main() {
 	int* ordem, * bestOrder;
 	float** heuristicas;
 	float** pheromones;
-	int **combinacoes;
-	float *denominator, *probabilityCombination;
+	int** combinacoes;
+	float* denominator, * probabilityCombination;
+
+	NoProbability* topoProbability;
 
 	//#####################variaveis Solucao#####################
 
 	int idSoluction, erro;
 	NoBin* topoBin, * primeiraColuna = NULL, * ultimaColuna = NULL, * auxBin = NULL;
 	NoPack* auxPack = NULL;
-	NoSoluction* geralSoluction, * bestOfBest, * bestIteration, * coveringSoluction;
-	NoSoluction* columnSoluction = NULL, * roudingSoluction = NULL;
+	NoSoluction* geralSoluction, * bestOfBest, * bestIteration;
+	NoSoluction* columnSoluction = NULL;
 
 	//#######################variaveis RMP######################
-	GRBenv* env = NULL; //cria��o do ambiente
-	GRBmodel* model = NULL;
+
 	int idColuna = 0; //id da �ltima coluna adicionada
-	int custo_reduzido_negativo = 1; // se h� custo reduzido negativo
-	int integer = 0;  //se a solu��o � inteira
-	int totalTipos;
-	double reducedCost; //valor do custo reduzido do padr�o atual
-	double* PiValue;
-	int actualIteration = 0;
-	double referenceImprovement;
-	int totalTiposBin, * qtdTipos = NULL, * qtdTiposBin = NULL;
 	float* nextStep;
 
 	//#######################variaveis MIP######################
+	GRBenv* env = NULL; //cria��o do ambiente
 	GRBmodel* modelMIP = NULL; //cria��o do modelo
+	int totalTipos, *qtdTipos;
 	double* valorVariaveis = NULL;
 	int  nz = 0, i, j; //nz n�o zeros, i = x, j = contador
 	int status;
@@ -4493,13 +4032,35 @@ int main() {
 	error = GRBloadenv(&env, NULL);
 	if (error) { printf("\nErro ao montar o ambiente\n"); goto QUIT; }
 
-	//error = GRBgetdblparam(env, GRB_DBL_PAR_INTFEASTOL, &gurobiTolerance);
-	//if (error) { printf("\nErro ao obter o valor da IntFeasTol\n"); goto QUIT; }
 
 	importaParametros();
 
-	printf("\tBPP Version 0.1.6\t\tMethods EP\n\tDetails: Insert News Combinations");
-	printf("\n\tAuthor: Daniel Bento Maia\tDate: 11/11/2025\n");
+	printf("\tBPP 0.2.7\t\t");
+	printf("\n\tAuthor: Daniel Bento Maia\tDate: 06/05/2026\n");
+
+	printParams();
+
+	while (opcao == 2) {
+
+		printf("\n\n\tTo change the parameters type 2; to solve one problem, type 1\n\t");
+		scanf("%d", &opcao);
+
+		if (opcao == 2) {
+
+			obtemValoresParametros();
+
+			updateParams();
+
+		}
+
+	}
+
+
+	printf("\n\n\tPlease type class, quantity of itens and instance:");
+	printf("\n\tFor example, to solve file 1_50_3.txt type 1 50 3\n\n\t");
+	scanf("%d %d %d", &classe, &quantidade, &instancia);
+
+
 
 	if (classe == 9) {
 
@@ -4514,24 +4075,6 @@ int main() {
 
 	}
 
-	/*	printf("\n\n\tTo change the parameters type 2; to solve one problem, type 1\n\t");
-		scanf("%d", &opcao);
-
-		if (opcao == 2) {
-
-			obtemValoresParametros();
-
-			updateParams();
-
-			opcao = 1;
-		}
-	*/
-
-	printf("\n\n\tPlease type class, quantity of itens and instance:");
-	printf("\n\tFor example, to solve file 1_50_3.txt type 1 50 3\n\n\t");
-	scanf("%d %d %d", &classe, &quantidade, &instancia);
-
-
 	denominator = malloc(quantidadeCombinacoes * sizeof(float));
 	probabilityCombination = malloc(quantidadeCombinacoes * sizeof(float));
 
@@ -4539,16 +4082,39 @@ int main() {
 	pheromones = malloc(quantidadeCombinacoes * sizeof(float*));
 	heuristicas = malloc(quantidadeOrdens * sizeof(float*));
 
-	defineSettings(classe, quantidade);
+	maiorDimensao = malloc(quantidadeOrdens * sizeof(float));
 
-	espera = (timeLimitACO * 0.15) + 1;
+	for (k = 0; k < quantidadeCombinacoes; k++) {
 
-	if (classe == 10) defineQAnt(quantidade);
+		combinacoes[k] = malloc(3 * sizeof(int)); //free ok
+		
+	}
+
+	preencheCombinacoes(combinacoes, quantidadeCombinacoes);
+
+
+	for (k = 0; k < quantidadeOrdens; k++) {
+
+		heuristicas[k] = malloc(quantidade * sizeof(float)); //free ok
+
+	}
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		pheromones[k] = malloc(quantidade * sizeof(float)); //free ok
+
+	}
 
 	itens = malloc(quantidade * sizeof(int*));
 	ordem = (int*)malloc(quantidade * sizeof(int));
 	bestOrder = (int*)malloc(quantidade * sizeof(int));
 	nextStep = malloc(quantidade * sizeof(float));
+
+	if (classe != 9) {
+
+		totalTipos = quantidade;
+
+	}
 
 	for (k = 0; k < quantidade; k++) {
 
@@ -4556,92 +4122,70 @@ int main() {
 
 	}
 
-	for (k = 0; k < quantidadeOrdens; k++) {
 
-		heuristicas[k] = malloc(quantidade * sizeof(float));
+	if(defaultTimeLimits == 0) defineSettings(classe, quantidade);
 
-	}
+	if (classe == 10) defineQAnt(quantidade);
 
-	for (k = 0; k < quantidadeCombinacoes; k++) {
-
-		pheromones[k] = malloc(quantidade * sizeof(float));
-		combinacoes[k] = malloc(3 * sizeof(int));
-
-	}
-
-	preencheCombinacoes(combinacoes, quantidadeCombinacoes);
-
-	semente = defineSeed(classe, quantidade, instancia);
-
-	srand(semente);
-
-	//	printParams();
+	espera = (timeLimitACO * ZMin) + 1;
 
 	tamanhoInstancia(classe, tamanho);
 
+
+	if (defaultSeeds == 0) { semente = defineSeed(classe, quantidade, instancia); }
+	else if (defaultSeeds == 1) {
+
+		semente = time(NULL);
+
+		srand(semente);
+
+	} else{
+		printf("\n\n\tPlease type a integer seed!");
+		printf("\n\tFor example, to 12345\n\n\t");
+		scanf("%d", &semente);
+	}
+
+
+	if (classe != 9) { importaArquivo(itens, heuristicas, classe, quantidade, instancia, tamanho); }
+
+	else {
+
+			totalTipos = importaArquivoClass9(itens, heuristicas, classe, quantidade, instancia, tamanho);
+
+			qtdTipos = calloc(totalTipos, sizeof(int));
+
+			for (k = 0; k < quantidade; k++) {
+
+
+				qtdTipos[itens[k][5]] = qtdTipos[itens[k][5]] + 1;
+
+
+			}
+
+	}
+
+	firstOrientation(itens, quantidade);
+
+	continuousLowerBound = volumeTotal / (tamanho[0] * tamanho[1] * tamanho[2]);
+
+	topoProbability = NULL;
 	totalTime = 0;
 	idSoluction = 0;
 	topoBin = NULL;
 	geralSoluction = NULL;
 	bestIteration = NULL;
 	bestOfBest = NULL;
-	roudingSoluction = NULL;
 	primeiraColuna = NULL;
 	ultimaColuna = NULL;
 	auxPack = NULL;
 	columnSoluction = NULL;
-	roudingSoluction = NULL;
-	model = NULL;
 	idColuna = 0;
-	custo_reduzido_negativo = 1;
-	integer = 0;
-	actualIteration = 0;
-	qtdTipos = NULL;
-	qtdTiposBin = NULL;
 	modelMIP = NULL;
 	valorVariaveis = NULL;
 	nz = 0;
 	error = 0; m = 0; nova_m = 0;
 
-
-	if (classe == 9) {
-
-		totalTipos = importaArquivoClass9(itens, heuristicas, classe, quantidade, instancia, tamanho);
-
-		PiValue = (double*)malloc(totalTipos * sizeof(double));
-
-		qtdTipos = calloc(totalTipos, sizeof(int));
-
-		for (k = 0; k < quantidade; k++) {
-
-			qtdTipos[itens[k][5]] = qtdTipos[itens[k][5]] + 1;
-
-		}
-
-	}
-	else {
-
-		totalTipos = quantidade;
-
-		importaArquivo(itens, heuristicas, classe, quantidade, instancia, tamanho);
-
-		PiValue = (double*)malloc(quantidade * sizeof(double));
-
-	}
-
-	for (k = 0; k < totalTipos; k++) {
-
-		PiValue[k] = 0.1;
-
-	}
-
-	printParams();
-
 	initialTime = time(NULL);
-
-	firstOrientation(itens, quantidade);
-
-	NoProbability* topoProbability = NULL;
 
 	topoProbability = montaPilhaProbabilidade(quantidade, pheromones, heuristicas, quantidadeCombinacoes, quantidadeOrdens);
 
@@ -4649,9 +4193,8 @@ int main() {
 
 	decrease = (float)pheromone / (float)quantidade;
 
-	continuousLowerBound = volumeTotal / (tamanho[0] * tamanho[1] * tamanho[2]);
-
 	totalProbabilityCombination = 0.0;
+
 
 	for (k = 0; k < quantidadeCombinacoes; k++) {
 
@@ -4661,20 +4204,19 @@ int main() {
 
 		sr = combinacoes[k][2];
 
-		topoBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+		topoBin = binPack(itens, ordem, quantidade, tamanho);
 
 		utilization = calcSmallerUtilization(topoBin, tamanho);
 
-		geralSoluction = empilharSoluction(geralSoluction, topoBin, idSoluction, topoBin->bin.idt + 1, (float)topoBin->bin.idt + (float)1.0 + utilization, 0);
+		geralSoluction = empilharSoluction(geralSoluction, topoBin, idSoluction, topoBin->bin.idt + 1, ((float)topoBin->bin.idt) + 1.0 + utilization, 0);
+
+		probabilityCombination[k] = (((float)continuousLowerBound) * QIncreaseC) / geralSoluction->soluction.utilization;
 
 		idSoluction++;
-
-		probabilityCombination[k] = ((float)continuousLowerBound) / geralSoluction->soluction.utilization;
 
 		totalProbabilityCombination = totalProbabilityCombination + probabilityCombination[k];
 
 		if (bestOfBest == NULL || bestOfBest->soluction.utilization > geralSoluction->soluction.utilization) {
-
 
 			bestOfBest = geralSoluction;
 
@@ -4682,7 +4224,7 @@ int main() {
 
 	}
 
-	printf("\n\tSolucao %d\t\t%2f", bestOfBest->soluction.id, bestOfBest->soluction.utilization);
+	printf("\n\n\tSolucao %d\t\t%2f\n\n", bestOfBest->soluction.id, bestOfBest->soluction.utilization);
 
 	calculaProbabilityCombination(probabilityCombination, totalProbabilityCombination, quantidadeCombinacoes);
 
@@ -4703,14 +4245,13 @@ int main() {
 
 			calcProbability(quantidade, denominator, topoProbability, ordem, k);
 
-			topoBin = binPack(itens, ordem, quantidade, tamanho, PiValue, classe);
+			topoBin = binPack(itens, ordem, quantidade, tamanho);
 
 			utilization = calcSmallerUtilization(topoBin, tamanho);
 
 			if (bestIteration == NULL || bestIteration->soluction.utilization > (float)topoBin->bin.idt + (float)1.0 + utilization) {
 
 				if (bestIteration != NULL) {
-
 
 					freeMemorySoluction(bestIteration);
 					bestIteration = NULL;
@@ -4724,12 +4265,10 @@ int main() {
 				copyVector(ordem, bestOrder, quantidade);
 
 				bestCombination = k;
+							
 			}
-			else {
-
-				freeMemoryBin(topoBin);
-
-			}
+			
+			else {freeMemoryBin(topoBin);}
 
 			totalTime = time(NULL) - initialTime;
 
@@ -4743,7 +4282,7 @@ int main() {
 
 		totalProbabilityCombination = updateProbabilityCombination(probabilityCombination, totalProbabilityCombination, bestCombination, continuousLowerBound / bestIteration->soluction.utilization, quantidadeCombinacoes);
 
-		updatePheromone(bestOrder, pheromones[k], quantidade, continuousLowerBound / bestIteration->soluction.utilization, decrease);
+		updatePheromone(bestOrder, pheromones[bestCombination], quantidade, continuousLowerBound / bestIteration->soluction.utilization, decrease);
 
 		if (bestIteration->soluction.utilization < bestOfBest->soluction.utilization) {
 
@@ -4764,404 +4303,20 @@ int main() {
 
 	bestCombination = selectBestCombination(combinacoes, probabilityCombination, quantidadeCombinacoes);
 
-	referenceImprovement = (double)bestOfBest->soluction.utilization;
-
-	//printLog(0);
-
 
 	if (classe == 9) {
-		error = montaModeloClass9(env, &model, &modelMIP, &ultimaColuna, geralSoluction, &m, totalTipos, qtdTipos, itens);
-		if (error) goto QUIT;
 
-		//printLog(1);
+		error = montaModeloClass9(env, &modelMIP, &ultimaColuna, geralSoluction, &m, totalTipos, qtdTipos, itens);
+		if (error) goto QUIT;
 
 	}
 	else {
-		error = montaModelo(env, &model, &modelMIP, &ultimaColuna, geralSoluction, quantidade, &m);
+				
+		error = montaModelo(env, &modelMIP, &ultimaColuna, geralSoluction, quantidade, &m);
 		if (error) goto QUIT;
-
-		//printLog(2);
 
 	}
 
-	//	printf("\nMontou modelo\n"); system("pause");
-
-		//###############################################################################################################
-
-		/*	error = GRBoptimize(model);
-		if (error) { printf("\nErro ao otimizar o modelo RMP\n"); goto QUIT; }
-
-		//printLog(3);
-
-		//	printf("\nResolveu modelo\n");	system("pause");
-		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, totalTipos, PiValue);
-		if (error) { printf("\nErro ao obter os valores das variaveis duais\n"); goto QUIT; }
-
-		//printLog(4);
-
-		error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
-		if (error) { printf("\nErro ao inserir obter o valor da funcao objetivo - Primeira Iteracao\n"); goto QUIT; }
-
-	//	printf("\nObteve os valores duais\n"); system("pause");
-
-		idColuna = m - 1;
-
-		if (classe == 9)qtdTiposBin = calloc(totalTipos, sizeof(int));
-
-		nova_m = m;
-
-		int variaveisArredondadas = 0;
-
-		while (custo_reduzido_negativo == 1 && totalTime < timeLimitRMP) {
-
-			//testeIntegridadeColunas(primeiraColuna, ultimaColuna, m);
-
-			auxBin = CriaNovosPadroes(combinacoes[bestCombination][0], itens, heuristicas, ordem, PiValue, quantidade, tamanho, classe, nextStep);
-
-			//printLog(5);
-
-		//	printf("\nCriou novos padroes\n");system("pause");
-
-			custo_reduzido_negativo = 0; //se foi encontrado custo reduzido negativo
-
-			while (auxBin) {
-
-				//printf("\nBin %d\n", auxBin->bin.idt);system("pause");
-
-				reducedCost = 1.0; //valor do custo reduzido do padr�o atual
-
-				auxPack = auxBin->bin.conteudo;
-
-				//printLog(6);
-
-				if (classe == 9) {
-
-					zeraQtdTiposBin(qtdTiposBin, totalTipos);
-
-					//printLog(7);
-
-					totalTiposBin = 0;
-
-				}
-
-				while (auxPack && reducedCost >= 0.0) { //calcula custo reduzido
-
-					if (classe == 9) {
-
-						k = itens[auxPack->pack.id][5];
-
-						//printLog(8);
-
-						if (qtdTiposBin[k] == 0) totalTiposBin++;
-
-						qtdTiposBin[k] = qtdTiposBin[k] + 1;
-
-						//printLog(9);
-
-					}
-					else {
-
-						k = auxPack->pack.id;
-
-						//printLog(10);
-
-					}
-
-					if (PiValue[k] > 0.0) reducedCost = reducedCost - PiValue[k];
-
-					//printLog(11);
-
-					auxPack = auxPack->proximo;
-
-					//printLog(12);
-				}
-
-				while (auxPack && classe == 9) {
-
-					k = itens[auxPack->pack.id][5];
-
-					//printLog(13);
-
-					if (qtdTiposBin[k] == 0) totalTiposBin++;
-
-					//printLog(14);
-
-					qtdTiposBin[k] = qtdTiposBin[k] + 1;
-
-					//printLog(15);
-
-					auxPack = auxPack->proximo;
-
-					//printLog(16);
-
-				}
-
-				if (reducedCost < 0.0) { //verifica se o custo reduzido � negativo
-
-					//printLog(17);
-					//printf("\nCusto-Reduzido Negativo\n", auxBin->bin.idt);	system("pause");
-
-					//testeQtdTiposBin(qtdTiposBin, totalTipos, totalTiposBin, auxBin->bin.conteudo, itens);
-
-					ultimaColuna = insereColuna(auxBin, ultimaColuna, idColuna);
-
-					//printLog(18);
-
-					//printf("\nInseriu coluna\n", auxBin->bin.idt);system("pause");
-
-					if (classe == 9) {
-
-						k = totalTiposBin;
-
-						//printLog(19);
-
-					}
-					else {
-
-						k = auxBin->bin.qtdeItens;
-
-						//printLog(20);
-					}
-
-					alocaMemoriaUmaVariavel(&cind, &cval, k);
-
-					if (classe == 9) {
-
-						//printLog(21);
-
-						nz = preencheUmaVariavelClass9(cind, cval, totalTipos, qtdTiposBin);
-
-						//printLog(22);
-
-						//if (nz != totalTiposBin) { printf("Erro! nz retorno funcao = %d, totaltiposBin %d", nz, totalTiposBin); system("pause"); }
-						//else{printf("\nPassou no teste retorno nz preencheUmaVariavel\n");system("pause");}
-
-					}
-					else {
-
-						//printLog(23);
-
-						nz = preencheUmaVariavel(cind, cval, auxBin);
-
-						//printLog(24);
-					}
-
-					error = GRBaddvar(model, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_CONTINUOUS, NULL);
-					if (error) { printf("\nErro ao inserir nova coluna no RMP\n"); goto QUIT; }
-
-					//printLog(25);
-					//printf("\nAdicionou coluna ao RMP\n");system("pause");
-
-
-					if(classe == 9){ error = GRBaddvar(modelMIP, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_INTEGER, NULL); }
-					else{ error = GRBaddvar(modelMIP, nz, cind, cval, 1.0, 0.0, GRB_INFINITY, GRB_BINARY, NULL); }
-
-					if (error) { printf("\nErro ao inserir nova coluna no MIP\n"); goto QUIT; }
-
-					//printLog(26);
-					//printf("\nAdicionou coluna ao MIP\n");system("pause");
-
-					nova_m = nova_m + 1; // aumenta uma vari�vel
-
-					idColuna++;
-
-					custo_reduzido_negativo = 1;
-
-					auxBin = auxBin->proximo;
-
-					//printLog(27);
-
-				}
-				else {
-
-					//printLog(28);
-
-					topoBin = auxBin;
-					auxBin = auxBin->proximo;
-					topoBin->proximo = NULL;
-					freeMemoryBin(topoBin);
-
-					//printLog(29);
-
-				}
-
-				//if (auxBin) { printf("\Vai passar para a proxima Bin\n"); system("pause"); }
-				//else { printf("\Nao ha mais bin\n"); system("pause"); }
-
-			}
-
-			if (custo_reduzido_negativo == 0 || actualIteration > NIterations) {
-
-				//printLog(30);
-
-				custo_reduzido_negativo = 0;
-
-		//		printf("\nVai arredondar uma variavel\n"); system("pause");
-
-				if (variaveisArredondadas < (int)ceil(objval)) {
-
-					//printLog(31);
-
-					error = obtemResultado(model, &valorVariaveis, m);
-					if (error) { printf("\nErro ao obter o resultado\n"); goto QUIT; }
-
-					//printLog(32);
-
-					//printf("\nObteve o resultado\n"); system("pause");
-
-					error = fixaUmaVariavel(model, valorVariaveis, m, &custo_reduzido_negativo);
-					if (error) goto QUIT;
-
-					//printLog(33);
-
-					if (custo_reduzido_negativo) variaveisArredondadas++;
-
-					free(valorVariaveis);
-
-				}
-
-			}
-
-			if (custo_reduzido_negativo == 1) {//encontrou-se padr�o com custo reduzido negativo
-
-		//		printf("\nVai otimizar o modelo linear\n"); system("pause");
-
-				//printLog(34);
-
-				error = GRBoptimize(model);
-				if (error) { printf("\nErro ao otimizar o RMP\n"); goto QUIT; }
-
-				//printLog(35);
-
-				error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &status);
-				if (error) goto QUIT;
-
-				//printLog(36);
-
-				if (status != GRB_OPTIMAL) {
-
-					fprintf(stderr, "Error: it isn't optimal\n");
-					goto QUIT;
-				}
-
-		//		printf("\Otimizou o modelo\n"); system("pause");
-
-				//printLog(37);
-
-				GRBgetdblattrarray(model, GRB_DBL_ATTR_PI, 0, totalTipos, PiValue);
-				if (error) { printf("\nErro ao obter os valores das variaveis duais (2)\n"); goto QUIT; }
-
-				//printLog(38);
-
-		//		printf("\Obteve o valor dos duais\n"); system("pause");
-
-				//novo c�digo
-
-				error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
-				if (error) { printf("\nErro ao inserir obter o valor da funcao objetivo\n"); goto QUIT; }
-
-				//printLog(39);
-
-		//		printf("\Obteve o resultado\n"); system("pause");
-
-
-				m = nova_m;
-
-				if (referenceImprovement - objval >= ZMin) {
-
-					//printLog(40);
-
-					referenceImprovement = objval;
-
-					actualIteration = 0;
-
-					}
-				else {
-
-				//printLog(41);
-
-
-				actualIteration++;
-
-		//		if (actualIteration > NIterations) { printf("\nLimite de Iteracao sem melhoria\n"); system("pause"); }
-
-						}
-		//		printf("\Atualiza iteracao\n"); system("pause");
-
-			}
-
-			totalTime = time(NULL) - initialTime;
-
-		//	if (totalTime > timeLimitRMP) { printf("\nTempo de execucao esgotado\n"); system("pause"); }
-
-			//printLog(42);
-
-
-		}
-
-		m = nova_m;
-
-		custo_reduzido_negativo = 1;
-
-		tempoUltimaMelhoria = time(NULL) - initialTime;
-
-		teta = 0.75;
-
-		while (custo_reduzido_negativo == 1 && variaveisArredondadas < (int)ceil(objval)) {
-
-			//printLog(43);
-
-			custo_reduzido_negativo = 0;
-
-			error = GRBoptimize(model);
-			if (error) { printf("\nErro ao otimizar o RMP\n"); goto QUIT; }
-
-			//printLog(44);
-
-			error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &status);
-			if (error) goto QUIT;
-
-			//printLog(45);
-
-
-			if (status != GRB_OPTIMAL) {
-
-			fprintf(stderr, "Error: it isn't optimal\n");
-			goto QUIT;
-		}
-
-		error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
-		if (error) { printf("\nErro ao obter o valor da funcao objetivo\n"); goto QUIT; }
-
-		error = obtemResultado(model, &valorVariaveis, m);
-		if (error) { printf("\nErro ao obter o resultado\n"); goto QUIT; }
-
-		//printLog(46);
-
-		error = fixaUmaVariavel(model, valorVariaveis, m, &custo_reduzido_negativo);
-		if (error) goto QUIT;
-
-		//printLog(47);
-
-		if (custo_reduzido_negativo) variaveisArredondadas++;
-
-		free(valorVariaveis);
-
-	}
-
-
-	//printLog(48);
-
-
-	totalTime = time(NULL) - initialTime;
-
-	roudingSoluction = empilharSoluction(roudingSoluction, NULL, 0, (int)ceil(objval), 0.0, totalTime);
-
-	//printLog(49);
-
-	//################################################################################################################
-
-	*/
 
 	totalTime = time(NULL) - initialTime;
 
@@ -5170,23 +4325,17 @@ int main() {
 	error = GRBsetdblparam(GRBgetenv(modelMIP), GRB_DBL_PAR_TIMELIMIT, (double)parcialTime);
 	if (error) { printf("\nErro ao configurar o tempo limite MIP\n"); goto QUIT; }
 
-	//printLog(50);
-
-
-	//	printf("\nVai resolver o problema inteiro\n"); system("pause");
 
 	error = GRBoptimize(modelMIP);
 	if (error) { printf("\nErro ao otimizar o MIP\n"); goto QUIT; }
-
-	//printLog(51);
 
 
 	error = GRBgetintattr(modelMIP, GRB_INT_ATTR_STATUS, &status);
 
 	if (status != GRB_OPTIMAL && status != GRB_TIME_LIMIT) {
 
-		fprintf(stderr, "Error: it isn't optimal\n");
-		goto QUIT;
+	fprintf(stderr, "Error: it isn't optimal\n");
+	goto QUIT;
 
 	}
 
@@ -5196,13 +4345,8 @@ int main() {
 	error = obtemResultado(modelMIP, &valorVariaveis, m);
 	if (error) { printf("\nErro ao obter resultado MIP\n"); goto QUIT; }
 
-	//	}
-
-//	printf("\nVai validar solucao\n"); system("pause");
-
 	totalTime = time(NULL) - initialTime;
 
-	//	totalTime = totalTime - roudingSoluction->soluction.time + tempoUltimaMelhoria;
 
 	erro = validSoluction(bestOfBest->soluction.bins, tamanho, quantidade, bestOfBest->soluction.value);
 
@@ -5213,10 +4357,11 @@ int main() {
 	}
 	else {
 
-		saveFile(bestOfBest->soluction.bins, classe, quantidade, instancia, bestOfBest->soluction.value, bestOfBest->soluction.time, semente);
+		saveFile(bestOfBest->soluction.bins, classe, quantidade, instancia, bestOfBest->soluction.value, bestOfBest->soluction.time, semente, 0);
 
 	}
 
+					
 	salvaSolucao(&columnSoluction, primeiraColuna, valorVariaveis, m, (int)objval, totalTime);
 
 	free(valorVariaveis);
@@ -5238,74 +4383,20 @@ int main() {
 
 	if (erro > 0) {
 
-		printf("\n\tSolucao CG com ressalvas! Encontrado %i erros!\n", erro);
+		printf("\n\tSolucao ILP nao salva! Encontrado %i erros!\n", erro);
+
+	}
+	else {
+
+		saveFile(columnSoluction->soluction.bins, classe, quantidade, instancia, columnSoluction->soluction.value, columnSoluction->soluction.time, semente, 1);
 
 	}
 
-	//saveFile(NULL, classe, quantidade, instancia, roudingSoluction->soluction.value, roudingSoluction->soluction.time, semente);
-
-	saveFile(columnSoluction->soluction.bins, classe, quantidade, instancia, columnSoluction->soluction.value, columnSoluction->soluction.time, semente);
-
-	printf("\n\tSolucao criada com sucesso! \n\tResultado registrado no arquivo BPP-0.1.6.csv\n");
+	printf("\n\tSolucao criada com sucesso! \n\tResultado registrado no arquivo results.csv\n");
 
 	printf("\nFinalizado %d_%d_%d\n", classe, quantidade, instancia);
 
 	printf("\n\n\t++++++++++++++++++++++++++++++++++++++++++++\n");
-
-
-	//#####################################################################################
-
-
-/*	if (classe == 9) {
-
-		for (k = 0; k < totalTipos; k++) {
-
-			free(qtdTipos[k]);
-
-		}
-
-		free(qtdTipos);
-
-	}
-
-
-	freeMemorySoluctionAll(columnSoluction);
-
-	freeMemorySoluctionACO(geralSoluction);
-
-	freeProbabilities(topoProbability);
-
-	free(PiValue);
-*/
-	GRBfreemodel(modelMIP);
-
-	/*	for (k = 0; k < quantidade; k++) {
-
-			free(itens[k]);
-
-		}
-
-		for (k = 0; k < quantidadeOrdens; k++) {
-
-			free(heuristicas[k]);
-
-		}
-
-		for (k = 0; k < quantidadeCombinacoes; k++) {
-
-			free(pheromones[k]);
-
-		}
-
-
-		free(itens);
-		free(ordem);
-		free(bestOrder);
-		free(nextStep);
-
-		*/
-		//Free environment
-	GRBfreeenv(env);
 
 QUIT:
 
@@ -5321,6 +4412,72 @@ QUIT:
 	}
 
 	system("pause");
+
+	GRBfreemodel(modelMIP);
+
+	freeProbabilities(topoProbability);
+
+	freeMemoryBin(columnSoluction->soluction.bins);
+
+	free(columnSoluction);
+
+	freeMemorySoluctionACO(geralSoluction);
+
+
+	for (k = 0; k < quantidade; k++) {
+		free(itens[k]);
+	}
+
+	for (k = 0; k < quantidadeOrdens; k++) {
+
+		free(heuristicas[k]);
+
+	}
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		free(pheromones[k]);
+
+	}
+
+
+	free(itens);
+	free(ordem);
+	free(bestOrder);
+	free(nextStep);
+
+
+	if (classe == 9) {
+
+		for (k = 0; k < totalTipos; k++) {
+
+			free(qtdTipos[k]);
+
+		}
+
+		free(qtdTipos);
+
+	}
+
+
+	for (k = 0; k < quantidadeCombinacoes; k++) {
+
+		free(combinacoes[k]);
+
+	}
+
+
+	free(denominator);
+	free(probabilityCombination);
+	free(combinacoes);
+	free(pheromones);
+	free(heuristicas);
+	free(maiorDimensao);
+
+
+	//Free environment
+	GRBfreeenv(env);
+
 
 	return 0;
 
