@@ -23,3 +23,4 @@
 	Column 4: Objective Function Value
 	Column 5: time in second
 	Column 6: waste (used only in class 10 problems)
+	Column 7: methods used (ACO or ACO+ILP)
